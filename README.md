@@ -73,7 +73,7 @@ All-in-one Windows maintenance and diagnostics tool with a modern dark GUI. Port
 ```powershell
 # Right-click > Run with PowerShell (as Admin)
 # Or from terminal:
-pwsh -ExecutionPolicy Bypass -File Manutenzione_PRO_MAX_v3_FINAL.ps1
+pwsh -ExecutionPolicy Bypass -File Manutenzione_PRO_MAX_v3.ps1
 ```
 
 ### Run as portable EXE
