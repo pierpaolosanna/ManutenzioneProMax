@@ -70,10 +70,9 @@ All-in-one Windows maintenance and diagnostics tool with a modern dark GUI. Port
 ## Usage
 
 ### Run as script
-```powershell
-# Right-click > Run with PowerShell (as Admin)
-# Or from terminal:
-pwsh -ExecutionPolicy Bypass -File Manutenzione_PRO_MAX_v3.ps1
+ManutenzioneProMax/
+  Manutenzione_PRO_MAX_v3_FINAL.ps1
+  ManutenzioneProMax.bat              <-- doppio click su questo
 ```
 
 ### Run as portable EXE
@@ -89,7 +88,7 @@ Expand-Archive "$env:TEMP\ps2exe.zip" -DestinationPath "$env:TEMP\ps2exe" -Force
 Import-Module "$env:TEMP\ps2exe\PS2EXE-master\Module\ps2exe.psm1"
 
 # Compile
-Invoke-PS2EXE -InputFile "Manutenzione_PRO_MAX_v3_FINAL.ps1" -OutputFile "ManutenzioneProMax.exe" -NoConsole -RequireAdmin -SupportOS -LongPaths -Title "Manutenzione PRO MAX" -Description "Windows maintenance tool" -Company "Peters IT" -Version "3.0.0.0" -Copyright "2026"
+Invoke-PS2EXE -InputFile "Manutenzione_PRO_MAX_v3.ps1" -OutputFile "ManutenzioneProMax.exe" -NoConsole -RequireAdmin -SupportOS -LongPaths -Title "Manutenzione PRO MAX" -Description "Windows maintenance tool" -Company "Peters IT" -Version "3.0.0.0" -Copyright "2026"
 ```
 
 ## Code Signing (optional)
