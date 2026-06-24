@@ -1,10 +1,16 @@
-# Manutenzione PRO MAX
+# âš¡ Manutenzione PRO MAX
 
 All-in-one Windows maintenance and diagnostics tool with a modern dark GUI. Portable, no installation required.
 
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1%20%7C%207.x-blue?logo=powershell)
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows)
 ![License](https://img.shields.io/badge/License-MIT-green)
+
+## Screenshot
+
+<img width="995" alt="Main interface" src="https://github.com/user-attachments/assets/b49f8f1a-0274-4e2e-9871-c8e2226b95a3" />
+<img width="1009" alt="Running maintenance" src="https://github.com/user-attachments/assets/b4d5062d-3f61-4117-b456-c9203d79bffa" />
+<img width="994" alt="Diagnostics" src="https://github.com/user-attachments/assets/a795d653-2164-4b53-aedc-715dcc51cc9a" />
 
 ## Features
 
@@ -48,18 +54,6 @@ All-in-one Windows maintenance and diagnostics tool with a modern dark GUI. Port
 - **Elevate Admin**: relaunch as administrator
 - **Restart PC**: with confirmation dialog
 
-## Screenshot
-<img width="995" height="592" alt="image" src="https://github.com/user-attachments/assets/b49f8f1a-0274-4e2e-9871-c8e2226b95a3" />
-<img width="1009" height="601" alt="image" src="https://github.com/user-attachments/assets/b4d5062d-3f61-4117-b456-c9203d79bffa" />
-<img width="994" height="587" alt="image" src="https://github.com/user-attachments/assets/a795d653-2164-4b53-aedc-715dcc51cc9a" />
-
-
-
-
-
-
-> Add a screenshot here after first build
-
 ## Requirements
 
 - Windows 10 or 11
@@ -67,18 +61,34 @@ All-in-one Windows maintenance and diagnostics tool with a modern dark GUI. Port
 - Administrator privileges (for most features)
 - Winget (for package updates)
 
-## Usage
+## Quick Start
 
-### Run as script
+1. Download or clone this repo
+2. Double-click **`ManutenzioneProMax.bat`**
+3. Accept the UAC prompt (admin required)
+4. Done. The GUI opens ready to use.
+
+The `.bat` launcher automatically finds PowerShell 7 or falls back to PowerShell 5.1.
+
+### File structure
+
+```
 ManutenzioneProMax/
-  Manutenzione_PRO_MAX_v3_FINAL.ps1
-  ManutenzioneProMax.bat              <-- doppio click su questo
+  Manutenzione_PRO_MAX_v3.ps1    â† main script
+  ManutenzioneProMax.bat          â† double-click to launch
+  version.txt                     â† current version
+  README.md
 ```
 
-### Run as portable EXE
-Download `ManutenzioneProMax.exe` from [Releases](../../releases). Double-click to run (requests admin).
+### Alternative: run from terminal
 
-## Build EXE from source
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File "Manutenzione_PRO_MAX_v3.ps1"
+```
+
+## Build EXE (optional, may trigger antivirus)
+
+> **Note:** EXE files compiled with PS2EXE may be flagged by antivirus as false positives. The recommended method is using the `.bat` launcher above.
 
 ```powershell
 # Download PS2EXE
@@ -115,14 +125,10 @@ Import-Certificate -FilePath "PetersIT.cer" -CertStoreLocation Cert:\LocalMachin
 - **Zero external modules**: Windows Update uses COM API directly
 - **No popups in EXE mode**: no `Write-Host`, no `Install-Module`
 
-## Auto-update (optional)
-
-The EXE can check for updates from this repo. Add a `version.txt` file with the current version number. The EXE compares at startup and self-updates from the latest Release.
-
 ## License
 
 [MIT](LICENSE)
 
 ## Author
 
-**Peters IT** - [@pierpaolosanna](https://github.com/pierpaolosanna)
+**Peters IT** : [@pierpaolosanna](https://github.com/pierpaolosanna)
