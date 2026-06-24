@@ -49,6 +49,12 @@ All-in-one Windows maintenance and diagnostics tool with a modern dark GUI. Port
 - **Restart PC**: with confirmation dialog
 
 ## Screenshot
+<img width="995" height="592" alt="image" src="https://github.com/user-attachments/assets/b49f8f1a-0274-4e2e-9871-c8e2226b95a3" />
+<img width="1009" height="601" alt="image" src="https://github.com/user-attachments/assets/b4d5062d-3f61-4117-b456-c9203d79bffa" />
+
+
+
+
 
 > Add a screenshot here after first build
 
