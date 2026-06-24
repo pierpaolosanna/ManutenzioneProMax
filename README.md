@@ -1,4 +1,4 @@
-# âš¡ Manutenzione PRO MAX
+# Manutenzione PRO MAX
 
 All-in-one Windows maintenance and diagnostics tool with a modern dark GUI. Portable, no installation required.
 
