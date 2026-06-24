@@ -108,3 +108,6 @@ All-in-one Windows maintenance and diagnostics tool with a modern dark GUI. Port
 ## 🛠️ Utilizzo
 
 ### Esecuzione come script
+- Eseguire il File ManutenzioneProMax.bat
+- Per avere tutte le funzionalità scegliere l'opzione 2 come AMMINISTRATORE
+- Se la Microsoft PowerShell 7 non è presente verrà installata
