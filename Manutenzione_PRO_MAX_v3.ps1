@@ -291,7 +291,7 @@ Update-Status "[OK] Completato!" $successColor;Flush-LogBuffer;Pump-UI
 # ============================
 function Build-GUI {
 [System.Windows.Forms.Application]::EnableVisualStyles()
-$script:form=New-Object System.Windows.Forms.Form;$script:form.Text="Manutenzione PRO MAX v3.0";$script:form.Size=New-Object System.Drawing.Size(1100,720)
+$script:form=New-Object System.Windows.Forms.Form;$script:form.Text="Manutenzione PRO MAX v3.0 Peters";$script:form.Size=New-Object System.Drawing.Size(1100,720)
 $script:form.MinimumSize=New-Object System.Drawing.Size(1100,720);$script:form.MaximumSize=New-Object System.Drawing.Size(1100,720)
 $script:form.StartPosition="CenterScreen";$script:form.BackColor=$bgColor;$script:form.ForeColor=$fgColor
 $script:form.FormBorderStyle="FixedSingle";$script:form.MaximizeBox=$false;$script:form.Font=New-Object System.Drawing.Font("Segoe UI",9)
@@ -388,7 +388,7 @@ $script:logBox=New-Object System.Windows.Forms.RichTextBox;$script:logBox.Locati
 $script:form.Controls.Add($contentPanel)
 
 $script:uiTimer=New-Object System.Windows.Forms.Timer;$script:uiTimer.Interval=100;$script:uiTimer.Add_Tick({Flush-LogBuffer});$script:uiTimer.Start()
-$script:form.Add_Shown({Log "";Log " $([char]0x26A1) Manutenzione PRO MAX v3.0";Log " $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | $psVer";Log " Log: $logFile";Log "";if(-not $isAdmin){Log " [!] Utente standard. 'Eleva Admin' per sbloccare tutto.";Log ""};Flush-LogBuffer})
+$script:form.Add_Shown({Log "";Log " $([char]0x26A1) Manutenzione PRO MAX v3.0 Peters";Log " $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | $psVer";Log " Log: $logFile";Log "";if(-not $isAdmin){Log " [!] Utente standard. 'Eleva Admin' per sbloccare tutto.";Log ""};Flush-LogBuffer})
 $script:form.Add_FormClosing({$script:isClosing=$true;$script:cancelRequested=$true;if($script:uiTimer){$script:uiTimer.Stop();$script:uiTimer.Dispose()}})
 [System.Windows.Forms.Application]::Run($script:form)
 }
