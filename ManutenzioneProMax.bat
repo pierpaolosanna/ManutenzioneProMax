@@ -17,7 +17,7 @@ if %errorlevel% equ 0 (
     set "PS=pwsh"
 ) else (
     echo.
-    echo *** PowerShell 7 NON è installato ***
+    echo *** PowerShell 7 NON e installato, attendere che si installi ***
     echo Installazione automatica in corso tramite winget...
     echo.
 
