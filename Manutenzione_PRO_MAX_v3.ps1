@@ -66,7 +66,7 @@ $tempDir=[System.IO.Path]::GetTempPath();$logFile=Join-Path $tempDir "Manutenzio
 $isPwsh7=($PSVersionTable.PSVersion.Major -ge 7)
 $script:pingProperty = if ($isPwsh7) { "Latency" } else { "ResponseTime" }
 
-$script:currentVersion = "3.0.0"
+$script:currentVersion = "3.0.1"
 $script:repoOwner = "pierpaolosanna"
 $script:repoName = "ManutenzioneProMax"
 $script:scriptFileName = "Manutenzione_PRO_MAX_v3.ps1"
