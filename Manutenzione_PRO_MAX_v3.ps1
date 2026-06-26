@@ -170,6 +170,138 @@ function Do-ScriptUpdate {
     Flush-LogBuffer;Pump-UI
 }
 
+function Do-FullUpdate {
+    if($script:isClosing -or (Test-Cancel)){return}
+    
+    Log "";Log "==============================================================================================="
+    Log "[>] FULL UPDATE - AGGIORNAMENTO COMPLETO"
+    Log "==============================================================================================="
+    Update-Status "[...] Verifica aggiornamento completo..." $infoColor
+    Flush-LogBuffer;Pump-UI
+
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        
+        # --- 1. Leggi versione remota ---
+        $remoteVersionUrl = $script:githubRawUrl + $script:versionFileName
+        $remoteVersion = (Invoke-WebRequest -Uri $remoteVersionUrl -UseBasicParsing -TimeoutSec 10).Content.Trim()
+        
+        Log "[OK] Versione locale: $($script:currentVersion)"
+        Log "[OK] Versione remota: $remoteVersion"
+
+        if ($remoteVersion -eq $script:currentVersion) {
+            Log "[OK] Tutti i file sono già aggiornati."
+            Update-Status "[OK] Già aggiornato" $successColor
+            Update-Progress 100
+            Flush-LogBuffer;Pump-UI
+            return
+        }
+
+        Log "[!] Nuova versione completa disponibile!"
+        $response = [System.Windows.Forms.MessageBox]::Show(
+            "Versione $remoteVersion disponibile.`n`nQuesta operazione aggiornerà TUTTI i file:`n- Script principale (.ps1)`n- Batch di avvio (.bat)`n- Documentazione (README.md)`n- Licenza (LICENSE)`n- Versione (version.txt)`n`nProcedere con l'aggiornamento completo?",
+            "Full Update Disponibile",
+            "YesNo",
+            "Question"
+        )
+        if ($response -ne "Yes") { 
+            Log "[i] Full Update annullato."; Update-Progress 100; return 
+        }
+
+        # --- 2. Determina percorso locale ---
+        $localDir = Split-Path -Parent $PSCommandPath
+        if (-not $localDir) { 
+            Log "[X] Impossibile determinare la cartella di esecuzione."
+            Update-Status "[X] Errore percorso" $exitColor
+            Update-Progress 100
+            return
+        }
+
+        # --- 3. Crea cartella backup ---
+        $backupDir = Join-Path $localDir "backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+        New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
+        Log "[OK] Backup creato in: $backupDir"
+
+        # --- 4. Lista file da scaricare ---
+        $files = @(
+            @{Remote="Manutenzione_PRO_MAX_v3.ps1"; Local="Manutenzione_PRO_MAX_v3.ps1"},
+            @{Remote="ManutenzioneProMax.bat"; Local="ManutenzioneProMax.bat"},
+            @{Remote="README.md"; Local="README.md"},
+            @{Remote="version.txt"; Local="version.txt"},
+            @{Remote="LICENSE"; Local="LICENSE"}
+        )
+
+        $downloaded = 0
+        $errors = 0
+
+        foreach($f in $files) {
+            if(Test-Cancel){ return }
+            
+            $remoteUrl = $script:githubRawUrl + $f.Remote
+            $localFile = Join-Path $localDir $f.Local
+            
+            # Backup del file esistente
+            if(Test-Path $localFile) {
+                $backupFile = Join-Path $backupDir $f.Local
+                Copy-Item -Path $localFile -Destination $backupFile -Force
+                Log "[OK] Backup: $($f.Local)"
+            }
+            
+            # Download del nuovo file
+            try {
+                Log "[DL] Download: $($f.Remote)..."
+                Invoke-WebRequest -Uri $remoteUrl -OutFile $localFile -UseBasicParsing -ErrorAction Stop
+                $downloaded++
+                Log "[OK] Aggiornato: $($f.Local)"
+            } catch {
+                $errors++
+                Log "[X] Errore download $($f.Local): $($_.Exception.Message)"
+            }
+            
+            # Aggiorna progresso (0-100)
+            $progress = [Math]::Round(($downloaded / $files.Count) * 100)
+            Update-Progress $progress
+            Pump-UI
+        }
+
+        # --- 5. Report finale ---
+        Log ""
+        Log "==============================================================================================="
+        Log "[OK] FULL UPDATE COMPLETATO!"
+        Log "     File scaricati: $downloaded / $($files.Count)"
+        if($errors -gt 0) { Log "[!] Errori: $errors" }
+        Log "     Backup salvato in: $backupDir"
+        Log "==============================================================================================="
+        
+        Update-Progress 100
+        Update-Status "[OK] Full Update completato ($downloaded file)" $successColor
+        Flush-LogBuffer;Pump-UI
+
+        # --- 6. Riavvio automatico con il nuovo script ---
+        if($downloaded -gt 0) {
+            $response = [System.Windows.Forms.MessageBox]::Show(
+                "Aggiornamento completato!`nRiavviare lo script con la nuova versione?",
+                "Riavvio necessario",
+                "YesNo",
+                "Question"
+            )
+            if($response -eq "Yes") {
+                $exe = if ($isPwsh7) { "pwsh.exe" } else { "powershell.exe" }
+                $localScriptPath = Join-Path $localDir "Manutenzione_PRO_MAX_v3.ps1"
+                Start-Process $exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$localScriptPath`""
+                $script:isClosing = $true
+                $script:form.Close()
+            }
+        }
+
+    } catch {
+        Log "[X] Errore Full Update: $($_.Exception.Message)"
+        Update-Status "[X] Errore" $exitColor
+        Update-Progress 100
+        Flush-LogBuffer;Pump-UI
+    }
+}
+
 function Do-Winget { if($script:isClosing -or(Test-Cancel)){return};if(-not(Test-WingetAvailable)){return};Update-Progress 10;Update-Status "[...] Winget..." $fgColor;Flush-LogBuffer;Pump-UI;Run-ProcessRealtime "winget" "upgrade --all --force --accept-package-agreements --accept-source-agreements --include-unknown" "Winget Upgrade" 10 25;Set-StepProgress 100 10 25;Update-Progress 100;Update-Status "[OK] Winget" $successColor;Flush-LogBuffer;Pump-UI }
 function Do-StoreUpdate { if($script:isClosing -or(Test-Cancel)){return};if(-not(Test-WingetAvailable)){return};Update-Progress 30;Update-Status "[...] Store..." $fgColor;Flush-LogBuffer;Pump-UI;Run-ProcessRealtime "winget" "upgrade --source msstore --all --accept-package-agreements --accept-source-agreements --include-unknown" "Store Update" 30 40;try{Start-Process "ms-windows-store://downloadsandupdates" -WindowStyle Hidden -ErrorAction SilentlyContinue}catch{};Log " [OK] Store in background.";Set-StepProgress 100 30 40;Update-Progress 100;Update-Status "[OK] Store" $successColor;Flush-LogBuffer;Pump-UI }
 function Do-SearchWU { if($script:isClosing -or(Test-Cancel)){return};Log "";Log "===============================================================================================";Log "[>] RICERCA: Windows Update";Log "===============================================================================================";Update-Progress 50;Update-Status "[...] Ricerca WU..." $fgColor;Flush-LogBuffer;Pump-UI;if(-not $isAdmin){Log "[!] Servono privilegi admin.";Update-Status "[!] Privilegi insufficienti" $warningColor;Flush-LogBuffer;Update-Progress 100;return};try{$session=New-Object -ComObject Microsoft.Update.Session;$searcher=$session.CreateUpdateSearcher();Pump-UI;$result=$searcher.Search("IsInstalled=0 and Type='Software'");Pump-UI;if($result.Updates.Count -gt 0){Log "[OK] Trovati $($result.Updates.Count):";for($i=0;$i -lt $result.Updates.Count;$i++){$u=$result.Updates.Item($i);$kb="";if($u.KBArticleIDs.Count -gt 0){$kb="KB$($u.KBArticleIDs.Item(0)) - "};Log " $($i+1). $kb$($u.Title)"};$script:pendingUpdates=$result}else{Log "[OK] Nessun aggiornamento.";$script:pendingUpdates=$null}}catch{Log "[X] $($_.Exception.Message)"};Log "===============================================================================================";Log "";Update-Progress 100;Update-Status "[OK] Ricerca completata" $successColor;Flush-LogBuffer;Pump-UI }
@@ -1447,12 +1579,21 @@ $categories = @{
     )
     "Manutenzione Script" = @(
         @{Text="📥 Aggiorna Script"; Color=$infoColor; Action={Do-ScriptUpdate}; Tooltip="Controlla e installa la nuova versione dello script da GitHub"},
+        @{Text="📦 Full Update"; Color=$runAllColor; Action={Do-FullUpdate}; Tooltip="Aggiorna TUTTI i file del repository (script, batch, README, license)"},
         @{Text="📄 Export Report"; Color=$infoColor; Action={Do-ExportReport}; Tooltip="Esporta il contenuto del log in un file di testo"}
     )
 }
-
-foreach($cat in $categories.Keys) { [void]$comboCategory.Items.Add($cat) }
-if($comboCategory.Items.Count -gt 0) { $comboCategory.SelectedIndex = 0 }
+		foreach($cat in $categories.Keys) { [void]$comboCategory.Items.Add($cat) }
+		if($comboCategory.Items.Count -gt 0) {
+			# Imposta "Manutenzione Script" come categoria di default
+			$defaultCategory = "Manutenzione Script"
+			$index = $comboCategory.Items.IndexOf($defaultCategory)
+			if($index -ge 0) {
+				$comboCategory.SelectedIndex = $index
+			} else {
+				$comboCategory.SelectedIndex = 0  # Fallback
+			}
+		}
 
 # --- LAYOUT ---
 $mainPanel = New-Object System.Windows.Forms.Panel
