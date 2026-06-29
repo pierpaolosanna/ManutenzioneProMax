@@ -1421,19 +1421,17 @@ Update-Status "[OK] Completato!" $successColor;Flush-LogBuffer;Pump-UI
 # ============================================================
 function Build-GUI {
 [System.Windows.Forms.Application]::EnableVisualStyles()
-
 $script:form = New-Object System.Windows.Forms.Form
 $script:form.Text = "Manutenzione PRO MAX v$($script:currentVersion) Peters"
 $script:form.Size = New-Object System.Drawing.Size(1050, 580)
 $script:form.MinimumSize = New-Object System.Drawing.Size(1050, 580)
-$script:form.MaximumSize = New-Object System.Drawing.Size(1050, 580)
 $script:form.StartPosition = "CenterScreen"
 $script:form.BackColor = $bgColor
 $script:form.ForeColor = $fgColor
-$script:form.FormBorderStyle = "FixedSingle"
-$script:form.MaximizeBox = $false
-$script:form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-
+$script:form.FormBorderStyle = "Sizable"
+$script:form.MaximizeBox = $true
+$script:form.WindowState = "Maximized"
+$script:form.Font = New-Object System.Drawing.Font("Segoe UI", 11)
 $dbProp = $script:form.GetType().GetProperty("DoubleBuffered", [System.Reflection.BindingFlags]"Instance,NonPublic")
 if($dbProp) { $dbProp.SetValue($script:form, $true) }
 
@@ -1498,11 +1496,14 @@ $script:form.Controls.Add($headerPanel)
 # --- CATEGORIE ---
 $categories = @{
     "Aggiornamenti" = @(
+		@{Text="▶️ UPDATE PROGRAMMI"; Color=$runAllColor; Action={Do-RunAll}; Tooltip="Esegue la sequenza completa di aggiornamento dei Programmi e di Windows"},
         @{Text="🔄 Winget"; Color=$accentColor; Action={Do-Winget}; Tooltip="Aggiorna tutti i programmi installati tramite Winget"},
         @{Text="📦 Store"; Color=$accentColor; Action={Do-StoreUpdate}; Tooltip="Aggiorna tutte le app del Microsoft Store"},
         @{Text="🔍 Cerca WU"; Color=$infoColor; Action={Do-SearchWU}; Tooltip="Cerca gli aggiornamenti disponibili per Windows Update"},
         @{Text="⬇️ Installa WU"; Color=$infoColor; Action={Do-InstallWU}; Tooltip="Scarica e installa tutti gli aggiornamenti di Windows in sospeso"},
-        @{Text="🔧 Driver"; Color=$accentColor; Action={Do-DriverUpdate}; Tooltip="Aggiorna driver via Windows Update"}
+        @{Text="🔧 Driver"; Color=$accentColor; Action={Do-DriverUpdate}; Tooltip="Aggiorna driver via Windows Update"},
+		@{Text="📥 Aggiorna Script"; Color=$infoColor; Action={Do-ScriptUpdate}; Tooltip="Controlla e installa la nuova versione dello script da GitHub"},
+        @{Text="📦 Full Update Script"; Color=$runAllColor; Action={Do-FullUpdate}; Tooltip="Aggiorna TUTTI i file del repository (script, batch, README, license)"}
     )
     "Pulizia" = @(
         @{Text="🧹 Temp"; Color=$maintColor; Action={Do-CleanTemp}; Tooltip="Pulisce le cartelle temporanee del sistema e dell'utente"},
@@ -1540,8 +1541,6 @@ $categories = @{
         @{Text="🔓 CPU Unlock"; Color=$cpuColor; Action={Do-UnlockCPU}; Tooltip="Sblocca le opzioni avanzate di gestione energia della CPU"}
     )
     "Sistema" = @(
-        @{Text="⏰ Shutdown Sched."; Color=$warningColor; Action={Do-ScheduleShutdown}; Tooltip="Programma lo spegnimento forzato del PC ogni giorno"},
-        @{Text="❌ Rimuovi Shutdown"; Color=$exitColor; Action={Do-RemoveShutdown}; Tooltip="Rimuove il task di spegnimento programmato"},
         @{Text="🎨 Ottimizza Visivi"; Color=$cpuColor; Action={Do-OptimizeVisual}; Tooltip="Ottimizza gli effetti visivi di Windows"},
         @{Text="⚡ Ottimizza Avvio"; Color=$cpuColor; Action={Do-BootOptimization}; Tooltip="Ottimizza servizi e avvio sistema"},
         @{Text="🖥️ Assist. Remota"; Color=$remoteColor; Action={Do-RemoteAssist}; Tooltip="Scarica e avvia RustDesk per assistenza remota"},
@@ -1573,9 +1572,15 @@ $categories = @{
         @{Text="🚀 DISABILITA TUTTO"; Color=$securityColor; Action={Do-PrivacyAll}; Tooltip="Esegue TUTTE le privacy in sequenza"}
     )
     "Utility" = @(
+		@{Text="⚙️ Riavvia su BIOS"; Color=$restartColor; Action={Start-Process "C:\Windows\System32\shutdown.exe" -ArgumentList "/r /fw /f /t 0"}; Tooltip="Riavvia il PC direttamente nel BIOS/UEFI"},
+		@{Text="🔁 Riavvia PC"; Color=$restartColor; Action={Start-Process "C:\Windows\System32\shutdown.exe" -ArgumentList "-r -t 00"}; Tooltip="Riavvia il computer immediatamente"},
+		@{Text="👤 Disconnetti Utente"; Color=$warningColor; Action={Start-Process "C:\Windows\System32\shutdown.exe" -ArgumentList "/l"}; Tooltip="Disconnette l'utente corrente"},
+		@{Text="⏻ Arresta PC"; Color=$exitColor; Action={Start-Process "C:\Windows\System32\shutdown.exe" -ArgumentList "-s -f -t 00"}; Tooltip="Spegne il computer immediatamente"},
+		@{Text="⏰ Shutdown Sched."; Color=$warningColor; Action={Do-ScheduleShutdown}; Tooltip="Programma lo spegnimento forzato del PC ogni giorno"},
+        @{Text="❌ Rimuovi Shutdown"; Color=$exitColor; Action={Do-RemoveShutdown}; Tooltip="Rimuove il task di spegnimento programmato"},
         @{Text="⏹️ Annulla"; Color=$exitColor; Action={$script:cancelRequested=$true}; Tooltip="Annulla l'operazione in corso in modo sicuro"},
-        @{Text="❌ Esci"; Color=$exitColor; Action={$script:isClosing=$true;$script:form.Close()}; Tooltip="Chiude l'applicazione di manutenzione"},
-        @{Text="🚀 UPGRADE PROGRAMMI"; Color=$runAllColor; Action={Do-RunAll}; Tooltip="Avvia la sequenza completa di aggiornamenti"}
+        @{Text="❌ Esci"; Color=$exitColor; Action={$script:isClosing=$true;$script:form.Close()}; Tooltip="Chiude l'applicazione di manutenzione"}
+       
     )
     "Manutenzione Script" = @(
         @{Text="📥 Aggiorna Script"; Color=$infoColor; Action={Do-ScriptUpdate}; Tooltip="Controlla e installa la nuova versione dello script da GitHub"},
@@ -1683,7 +1688,7 @@ $script:logBox = New-Object System.Windows.Forms.RichTextBox
 $script:logBox.Dock = "Fill"
 $script:logBox.BackColor = $logBg
 $script:logBox.ForeColor = [System.Drawing.Color]::FromArgb(200, 200, 210)
-$script:logBox.Font = New-Object System.Drawing.Font("Consolas", 7, [System.Drawing.FontStyle]::Regular)
+$script:logBox.Font = New-Object System.Drawing.Font("Consolas", 12, [System.Drawing.FontStyle]::Regular)
 $script:logBox.ReadOnly = $true
 $script:logBox.BorderStyle = "None"
 $script:logBox.ScrollBars = "ForcedVertical"
@@ -1809,6 +1814,31 @@ $script:form.Add_FormClosing({
     $script:cancelRequested = $true
     Stop-ProgressPulse
     if($script:uiTimer) { $script:uiTimer.Stop(); $script:uiTimer.Dispose() }
+})
+
+$script:form.Add_Shown({
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    try {
+        $remoteVersionUrl = $script:githubRawUrl + $script:versionFileName
+        $remoteVersion = (Invoke-WebRequest -Uri $remoteVersionUrl -UseBasicParsing -TimeoutSec 10).Content.Trim()
+        if ($remoteVersion -ne $script:currentVersion) {
+            Log "[!] Nuova versione disponibile: $remoteVersion (locale: $($script:currentVersion))"
+            $response = [System.Windows.Forms.MessageBox]::Show(
+                "Versione $remoteVersion disponibile (hai la $($script:currentVersion)).`nEseguire Full Update?",
+                "Aggiornamento Disponibile",
+                "YesNo",
+                "Question"
+            )
+            if ($response -eq "Yes") {
+                Do-FullUpdate
+            }
+        } else {
+            Log "[OK] Script aggiornato (v$($script:currentVersion))"
+        }
+    } catch {
+        Log "[!] Impossibile verificare aggiornamenti: $($_.Exception.Message)"
+    }
+    Flush-LogBuffer; Pump-UI
 })
 
 [System.Windows.Forms.Application]::Run($script:form)
