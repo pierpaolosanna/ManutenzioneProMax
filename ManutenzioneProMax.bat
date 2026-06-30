@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo   Manutenzione PRO MAX v3.0
+echo   Manutenzione PRO MAX
 echo ========================================
 echo.
 echo  [1] Esegui come UTENTE
