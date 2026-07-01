@@ -471,7 +471,6 @@ function Do-FullUpdate {
                     # Fallback: usa lo script corrente
                     $localScriptPath = $PSCommandPath
                     Log "[i] Riavvio con il file corrente: $([System.IO.Path]::GetFileName($localScriptPath))"
-                    # Se anche questo non esiste, prova altri nomi
                     if (-not (Test-Path $localScriptPath)) {
                         $possibleNames = @("Manutenzione_PRO_MAX.ps1", "Manutenzione_PRO_MAX_v3.ps1")
                         foreach ($name in $possibleNames) {
