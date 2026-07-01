@@ -118,7 +118,7 @@ $logFile = Join-Path $tempDir "Manutenzione_PRO_MAX_$(Get-Date -Format 'yyyyMMdd
 $isPwsh7 = ($PSVersionTable.PSVersion.Major -ge 7)
 $script:pingProperty = if ($isPwsh7) { "Latency" } else { "ResponseTime" }
 
-$script:currentVersion = "3.0.1"
+$script:currentVersion = "3.0.3"
 $script:repoOwner = "pierpaolosanna"
 $script:repoName = "ManutenzioneProMax"
 $script:scriptFileName = "Manutenzione_PRO_MAX.ps1"
