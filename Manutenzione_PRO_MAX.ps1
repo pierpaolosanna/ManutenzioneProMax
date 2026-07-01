@@ -362,7 +362,7 @@ function Do-FullUpdate {
 
         Log "[!] Nuova versione completa disponibile!"
         $response = [System.Windows.Forms.MessageBox]::Show(
-            "Versione $remoteVersion disponibile.`n`nQuesta operazione aggiornerà TUTTI i file nella root della repository:`n- Script principale (.ps1)`n- Batch (.bat)`n- Documentazione (.md)`n- Licenza (LICENSE)`n- Versione (version.txt)`n- Altri file aggiunti in futuro`n`nLe cartelle 'Prompt' e 'Docs' (contenenti dati utente) NON verranno toccate.`n`nProcedere con l'aggiornamento completo?",
+            "Versione $remoteVersion disponibile.`n`nQuesta operazione aggiornerà TUTTI i file nella root della repository (escluse le cartelle Prompt e Docs).`n`nProcedere?",
             "Full Update Disponibile",
             "YesNo",
             "Question"
@@ -385,8 +385,8 @@ function Do-FullUpdate {
         Log "[>] Recupero lista file da GitHub..."
         $contents = Invoke-RestMethod -Uri $apiUrl -Method Get -UseBasicParsing -TimeoutSec 15
 
-        # Filtra solo i file (escludi le directory) e escludi le cartelle che non vogliamo sovrascrivere
-        $excludedFolders = @("Prompt", "Docs")  # cartelle da non toccare
+        # Filtra: solo file, escludi cartelle e le cartelle utente
+        $excludedFolders = @("Prompt", "Docs")
         $filesToDownload = $contents | Where-Object { 
             $_.type -eq "file" -and $excludedFolders -notcontains $_.name
         }
@@ -432,7 +432,6 @@ function Do-FullUpdate {
                 Log "[X] Errore download $($file.name): $($_.Exception.Message)"
             }
             
-            # Aggiorna progresso
             $progress = [Math]::Round(($downloaded / $filesToDownload.Count) * 100)
             Update-Progress $progress
             Pump-UI
@@ -451,7 +450,7 @@ function Do-FullUpdate {
         Update-Status "[OK] Full Update completato ($downloaded file)" $successColor
         Flush-LogBuffer;Pump-UI
 
-        # --- 6. Riavvio automatico con il nuovo script ---
+        # --- 6. Riavvio ---
         if ($downloaded -gt 0) {
             $response = [System.Windows.Forms.MessageBox]::Show(
                 "Aggiornamento completato!`nRiavviare lo script con la nuova versione?",
@@ -462,25 +461,21 @@ function Do-FullUpdate {
             if ($response -eq "Yes") {
                 $exe = if ($isPwsh7) { "pwsh.exe" } else { "powershell.exe" }
                 
-                # Cerca il file principale nella repository (di solito Manutenzione_PRO_MAX.ps1)
-                $newScriptPath = Join-Path $localDir "Manutenzione_PRO_MAX.ps1"
-                if (Test-Path $newScriptPath) {
-                    $localScriptPath = $newScriptPath
-                    Log "[i] Riavvio con il nuovo file: Manutenzione_PRO_MAX.ps1"
-                } else {
-                    # Fallback: usa lo script corrente
-                    $localScriptPath = $PSCommandPath
-                    Log "[i] Riavvio con il file corrente: $([System.IO.Path]::GetFileName($localScriptPath))"
-                    if (-not (Test-Path $localScriptPath)) {
-                        $possibleNames = @("Manutenzione_PRO_MAX.ps1", "Manutenzione_PRO_MAX_v3.ps1")
-                        foreach ($name in $possibleNames) {
-                            $testPath = Join-Path $localDir $name
-                            if (Test-Path $testPath) {
-                                $localScriptPath = $testPath
-                                break
-                            }
-                        }
+                # CERCA IL FILE CORRETTO
+                $possibleNames = @("Manutenzione_PRO_MAX.ps1", "Manutenzione_PRO_MAX_v3.ps1")
+                $localScriptPath = $null
+                foreach ($name in $possibleNames) {
+                    $testPath = Join-Path $localDir $name
+                    if (Test-Path $testPath) {
+                        $localScriptPath = $testPath
+                        Log "[i] Trovato script: $name"
+                        break
                     }
+                }
+                
+                if (-not $localScriptPath) {
+                    $localScriptPath = $PSCommandPath
+                    Log "[i] Fallback allo script corrente"
                 }
                 
                 if ($localScriptPath -and (Test-Path $localScriptPath)) {
@@ -488,16 +483,13 @@ function Do-FullUpdate {
                     $script:isClosing = $true
                     $script:form.Close()
                 } else {
-                    Log "[X] Impossibile trovare lo script principale per il riavvio."
+                    Log "[X] Impossibile trovare lo script per il riavvio."
                 }
             }
         }
 
     } catch {
         Log "[X] Errore Full Update: $($_.Exception.Message)"
-        if ($_.Exception.Message -match "404") {
-            Log "[!] Verifica che il repository '$($script:repoOwner)/$($script:repoName)' sia pubblico e accessibile."
-        }
         Update-Status "[X] Errore" $exitColor
         Update-Progress 100
         Flush-LogBuffer;Pump-UI
