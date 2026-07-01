@@ -5,23 +5,29 @@ All-in-one Windows maintenance and diagnostics tool with a modern dark GUI. Port
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1%20%7C%207.x-blue?logo=powershell)
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/Version-3.0.1-brightgreen)
+![Version](https://img.shields.io/badge/Version-3.0.2-brightgreen)
 
 ## 📋 Descrizione
 
 **Manutenzione PRO MAX** è uno strumento completo di manutenzione e diagnostica per Windows, progettato con un'interfaccia moderna e scura. Tutte le funzionalità sono organizzate in menu a tendina con **tooltip esplicativi** per guidare l'utente.
+
+Il tool è modulare: oltre allo script principale, include moduli separati per la **Chat AI** e la **Ricerca File**, caricati dinamicamente all'avvio.
 
 ## ✨ Caratteristiche Principali
 
 ### 🔄 Aggiornamenti
 | Funzione | Descrizione | Tooltip |
 |----------|-------------|---------|
+| **Eleva Admin** | Riavvia lo script con privilegi amministrativi per sbloccare tutte le funzionalità | ✅ |
+| **Crea Ripristino** | Crea un punto di ripristino del sistema prima di eseguire modifiche | ✅ |
 | **UPGRADE PROGRAMMI** | Avvia la sequenza completa di aggiornamenti: Winget, Store, Windows Update, Pulizia temp e Flush DNS | ✅ |
 | **Winget** | Aggiorna tutti i programmi installati tramite Winget (gestore pacchetti Windows) | ✅ |
 | **Store** | Aggiorna tutte le app del Microsoft Store | ✅ |
 | **Cerca WU** | Cerca gli aggiornamenti disponibili per Windows Update | ✅ |
 | **Installa WU** | Scarica e installa tutti gli aggiornamenti di Windows in sospeso | ✅ |
 | **Driver** | Aggiorna driver via Windows Update | ✅ |
+| **Aggiorna Script** | Controlla e installa automaticamente la nuova versione dello script da GitHub con backup | ✅ |
+| **Full Update Script** | Aggiorna TUTTI i file del repository (script, batch, README, license) | ✅ |
 
 ### 🧹 Pulizia
 | Funzione | Descrizione | Tooltip |
@@ -98,24 +104,42 @@ All-in-one Windows maintenance and diagnostics tool with a modern dark GUI. Port
 | **Privacy Task** | Disabilita attività pianificate di telemetria (Compatibilità, CEIP, SQM, ecc.) | ✅ |
 | **DISABILITA TUTTO** | Esegue TUTTE le privacy in sequenza e propone riavvio | ✅ |
 
-### ⚙️ Sistema
+### ⚙️ Utility
 | Funzione | Descrizione | Tooltip |
 |----------|-------------|---------|
+| **Riavvia su BIOS** | Riavvia il PC direttamente nel BIOS/UEFI | ✅ |
+| **Riavvia PC** | Riavvia il computer immediatamente | ✅ |
+| **Disconnetti Utente** | Disconnette l'utente corrente | ✅ |
+| **Arresta PC** | Spegne il computer immediatamente | ✅ |
 | **Shutdown Sched.** | Programma lo spegnimento forzato del PC ogni giorno all'ora impostata (attività pianificata) | ✅ |
 | **Rimuovi Shutdown** | Rimuove il task di spegnimento programmato creato in precedenza | ✅ |
-| **Ottimizza Visivi** | Ottimizza gli effetti visivi di Windows: disabilita animazioni inutili, mantiene Peek, anteprime e ombre | ✅ |
-| **Ottimizza Avvio** | Ottimizza servizi di avvio (SysMain, MapsBroker, Xbox, ecc.) e abilita avvio veloce | ✅ |
-| **Assist. Remota** | Scarica e avvia RustDesk per assistenza remota (portatile) mostrando ID e password | ✅ |
-| **Eleva Admin** | Riavvia lo script con privilegi amministrativi per sbloccare tutte le funzionalità | ✅ |
-| **Riavvia PC** | Riavvia il sistema dopo 5 secondi con un messaggio di avviso | ✅ |
-
-### 📦 Utility
-| Funzione | Descrizione | Tooltip |
-|----------|-------------|---------|
+| **AI Chat** | Apre il dialogo AI Chat con supporto Gemini, Groq, Cloudflare e Bynara | ✅ |
+| **Ricerca File** | Apre il dialogo di ricerca rapida file e contenuti (ricerca per nome, contenuto, duplicati, file grandi) | ✅ |
 | **Annulla** | Annulla l'operazione in corso in modo sicuro | ✅ |
-| **Export Report** | Esporta il contenuto del log in un file di testo sul desktop | ✅ |
-| **Aggiorna Script** | Controlla e installa automaticamente la nuova versione dello script da GitHub con backup | ✅ |
 | **Esci** | Chiude l'applicazione di manutenzione | ✅ |
+
+### 🤖 AI Chat (Modulo AICHAT.ps1)
+| Funzione | Descrizione |
+|----------|-------------|
+| **Provider** | Supporto per Gemini, Groq, Cloudflare e Bynara |
+| **Modelli** | Ogni provider ha una lista di modelli selezionabili |
+| **Agenti** | Carica automaticamente i file `.md` dalla cartella `Prompt/` come System Prompt |
+| **Salva Agente** | Salva il prompt corrente come nuovo agente su disco |
+| **Ricerca Web** | Integra DDG e Wikipedia per risposte aggiornate |
+| **Allegati** | Supporta file PDF, DOC, DOCX, XLS, XLSX e testuali; legge e analizza il contenuto |
+| **Statistiche** | Mostra i token utilizzati per sessione e per modello |
+| **Impostazioni** | Modifica System Prompt e chiavi Cloudflare |
+| **Verifica Modelli** | Testa tutti i provider in sequenza |
+
+### 🔍 Ricerca File (Modulo Search.ps1)
+| Funzione | Descrizione |
+|----------|-------------|
+| **Ricerca per Nome** | Cerca file in base al pattern del nome |
+| **Ricerca per Contenuto** | Cerca testo all'interno dei file |
+| **Ricerca Duplicati** | Trova file duplicati tramite hash MD5 |
+| **Ricerca File Grandi** | Trova file con dimensione superiore a una soglia (default 100 MB) |
+| **Ricorsiva** | Opzione per cercare nelle sottocartelle |
+| **Interfaccia** | Risultati in DataGridView, copia percorso, apri cartella, esporta risultati |
 
 ## 📸 Screenshots
 
@@ -129,15 +153,15 @@ All-in-one Windows maintenance and diagnostics tool with a modern dark GUI. Port
 <img width="994" height="587" alt="Privacy Section" src="https://github.com/user-attachments/assets/a795d653-2164-4b53-aedc-715dcc51cc9a" />
 *Sezione Privacy per disabilitare telemetria di Windows, Office, Edge e Task Scheduler*
 
-## 🚀 Novità della v3.0.1
+## 🚀 Novità della v3.0.2
 
-- ✅ **12 utility per DOMINIO**: Info, Test DC, Sincronizza Ora, Flush Kerberos, GPO, Reset Profilo, DNS, Sito AD, LDAP, Cambia Password, Ultimo Login, Gruppi Utente
-- ✅ **Backup compresso**: Seleziona origine e destinazione, compressione ZIP con data/ora e percentuale
-- ✅ **Privacy completa**: 5 funzioni per disabilitare telemetria Windows, Office, Edge e Task Scheduler
-- ✅ **Ottimizzazione Avvio**: Gestione servizi e avvio veloce
-- ✅ **Health Check**: Verifica integrata di SFC, DISM, eventi e memoria
-- ✅ **Barra di progresso**: Ora raggiunge sempre il 100% al termine di ogni operazione
-- ✅ **Interfaccia migliorata**: Linea separatrice verticale, icone Unicode, testo centrato
+- ✅ **Modularità**: Script suddiviso in moduli separati (AICHAT.ps1, Search.ps1)
+- ✅ **AI Chat**: Integrazione con Gemini, Groq, Cloudflare e Bynara con supporto agenti, allegati e ricerca web
+- ✅ **Ricerca File**: Nuovo modulo per ricerca rapida file e contenuti, duplicati e file grandi
+- ✅ **DPI Scaling**: Pulsanti e UI si adattano automaticamente agli schermi ad alta risoluzione
+- ✅ **Documentazione**: Ogni pulsante ha una scheda informativa (clicca su ℹ️)
+- ✅ **Punto Ripristino**: Aggiunto pulsante "Crea Ripristino" nella sezione Aggiornamenti
+- ✅ **Icona personalizzata**: L'icona della finestra è l'avatar di GitHub
 
 ## 📦 Requisiti
 
@@ -146,26 +170,32 @@ All-in-one Windows maintenance and diagnostics tool with a modern dark GUI. Port
 - Privilegi amministrativi (per la maggior parte delle funzionalità)
 - Winget (per gli aggiornamenti pacchetti)
 - Modulo ActiveDirectory (per le funzioni dominio, opzionale)
+- Moduli AICHAT.ps1 e Search.ps1 (presenti nella stessa directory)
 
 ## 🛠️ Utilizzo
 
 ### Esecuzione come script
-1. Scaricare il file `Manutenzione_PRO_MAX_v3.ps1`
-2. Eseguirlo con PowerShell (tasto destro → "Esegui con PowerShell")
+1. Scaricare i file `Manutenzione_PRO_MAX_v3.ps1`, `AICHAT.ps1` e `Search.ps1` nella stessa cartella
+2. Eseguire lo script principale con PowerShell (tasto destro → "Esegui con PowerShell")
 3. Per avere tutte le funzionalità, cliccare su **"Eleva Admin"** per ottenere privilegi amministrativi
 4. Se PowerShell 7 non è presente, verrà installato automaticamente
 
 ### Auto-aggiornamento
 - Il pulsante **"Aggiorna Script"** verifica automaticamente la presenza di nuove versioni su GitHub
 - Se disponibile, propone il download e il riavvio con backup automatico
+- Il pulsante **"Full Update Script"** aggiorna TUTTI i file del repository (script, batch, README, LICENSE, version.txt)
 
 ## 📁 Struttura del repository
-
 ManutenzioneProMax/
 ├── Manutenzione_PRO_MAX_v3.ps1 # Script principale
+├── AICHAT.ps1 # Modulo AI Chat
+├── Search.ps1 # Modulo Ricerca File
+├── Prompt/ # Agenti AI (creata automaticamente)
+├── Docs/Buttons/ # Documentazione pulsanti (creata automaticamente)
 ├── ManutenzioneProMax.bat # Batch per esecuzione semplificata
 ├── README.md # Questa documentazione
-└── version.txt # Versione corrente (3.0.1)
+└── version.txt # Versione corrente (3.0.2)
+
 
 ## 🤝 Contributi
 
