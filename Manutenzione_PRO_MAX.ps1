@@ -461,19 +461,29 @@ function Do-FullUpdate {
             )
             if ($response -eq "Yes") {
                 $exe = if ($isPwsh7) { "pwsh.exe" } else { "powershell.exe" }
-                # Usa il nome dello script corrente (potrebbe essere Manutenzione_PRO_MAX.ps1 o altro)
-                $localScriptPath = $PSCommandPath
-                if (-not (Test-Path $localScriptPath)) {
-                    # Fallback: cerca il file principale
-                    $possibleNames = @("Manutenzione_PRO_MAX.ps1", "Manutenzione_PRO_MAX_v3.ps1")
-                    foreach ($name in $possibleNames) {
-                        $testPath = Join-Path $localDir $name
-                        if (Test-Path $testPath) {
-                            $localScriptPath = $testPath
-                            break
+                
+                # Cerca il file principale nella repository (di solito Manutenzione_PRO_MAX.ps1)
+                $newScriptPath = Join-Path $localDir "Manutenzione_PRO_MAX.ps1"
+                if (Test-Path $newScriptPath) {
+                    $localScriptPath = $newScriptPath
+                    Log "[i] Riavvio con il nuovo file: Manutenzione_PRO_MAX.ps1"
+                } else {
+                    # Fallback: usa lo script corrente
+                    $localScriptPath = $PSCommandPath
+                    Log "[i] Riavvio con il file corrente: $([System.IO.Path]::GetFileName($localScriptPath))"
+                    # Se anche questo non esiste, prova altri nomi
+                    if (-not (Test-Path $localScriptPath)) {
+                        $possibleNames = @("Manutenzione_PRO_MAX.ps1", "Manutenzione_PRO_MAX_v3.ps1")
+                        foreach ($name in $possibleNames) {
+                            $testPath = Join-Path $localDir $name
+                            if (Test-Path $testPath) {
+                                $localScriptPath = $testPath
+                                break
+                            }
                         }
                     }
                 }
+                
                 if ($localScriptPath -and (Test-Path $localScriptPath)) {
                     Start-Process $exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$localScriptPath`""
                     $script:isClosing = $true
