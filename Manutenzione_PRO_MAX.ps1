@@ -118,7 +118,7 @@ $logFile = Join-Path $tempDir "Manutenzione_PRO_MAX_$(Get-Date -Format 'yyyyMMdd
 $isPwsh7 = ($PSVersionTable.PSVersion.Major -ge 7)
 $script:pingProperty = if ($isPwsh7) { "Latency" } else { "ResponseTime" }
 
-$script:currentVersion = "3.0.3"
+$script:currentVersion = "3.0.1"
 $script:repoOwner = "pierpaolosanna"
 $script:repoName = "ManutenzioneProMax"
 $script:scriptFileName = "Manutenzione_PRO_MAX.ps1"
@@ -362,6 +362,166 @@ function Do-FullUpdate {
 
         Log "[!] Nuova versione completa disponibile!"
         $response = [System.Windows.Forms.MessageBox]::Show(
+            "Versione $remoteVersion disponibile.`n`nQuesta operazione aggiornerà TUTTI i file nella root della repository:`n- Script principale (.ps1)`n- Batch (.bat)`n- Documentazione (.md)`n- Licenza (LICENSE)`n- Versione (version.txt)`n- Altri file aggiunti in futuro`n`nLe cartelle 'Prompt' e 'Docs' (contenenti dati utente) NON verranno toccate.`n`nProcedere con l'aggiornamento completo?",
+            "Full Update Disponibile",
+            "YesNo",
+            "Question"
+        )
+        if ($response -ne "Yes") { 
+            Log "[i] Full Update annullato."; Update-Progress 100; return 
+        }
+
+        # --- 2. Determina percorso locale ---
+        $localDir = Split-Path -Parent $PSCommandPath
+        if (-not $localDir) { 
+            Log "[X] Impossibile determinare la cartella di esecuzione."
+            Update-Status "[X] Errore percorso" $exitColor
+            Update-Progress 100
+            return
+        }
+
+        # --- 3. Ottieni la lista dei file dalla repository via API GitHub ---
+        $apiUrl = "https://api.github.com/repos/$($script:repoOwner)/$($script:repoName)/contents/"
+        Log "[>] Recupero lista file da GitHub..."
+        $contents = Invoke-RestMethod -Uri $apiUrl -Method Get -UseBasicParsing -TimeoutSec 15
+
+        # Filtra solo i file (escludi le directory) e escludi le cartelle che non vogliamo sovrascrivere
+        $excludedFolders = @("Prompt", "Docs")  # cartelle da non toccare
+        $filesToDownload = $contents | Where-Object { 
+            $_.type -eq "file" -and $excludedFolders -notcontains $_.name
+        }
+
+        if (-not $filesToDownload) {
+            Log "[X] Nessun file trovato nella repository."
+            Update-Status "[X] Errore" $exitColor
+            Update-Progress 100
+            return
+        }
+
+        Log "[OK] Trovati $($filesToDownload.Count) file da scaricare."
+
+        # --- 4. Crea cartella backup ---
+        $backupDir = Join-Path $localDir "backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+        New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
+        Log "[OK] Backup creato in: $backupDir"
+
+        $downloaded = 0
+        $errors = 0
+
+        foreach ($file in $filesToDownload) {
+            if (Test-Cancel) { return }
+            
+            $remoteUrl = $file.download_url
+            $localFile = Join-Path $localDir $file.name
+            
+            # Backup del file esistente
+            if (Test-Path $localFile) {
+                $backupFile = Join-Path $backupDir $file.name
+                Copy-Item -Path $localFile -Destination $backupFile -Force
+                Log "[OK] Backup: $($file.name)"
+            }
+            
+            # Download del nuovo file
+            try {
+                Log "[DL] Download: $($file.name)..."
+                Invoke-WebRequest -Uri $remoteUrl -OutFile $localFile -UseBasicParsing -ErrorAction Stop
+                $downloaded++
+                Log "[OK] Aggiornato: $($file.name)"
+            } catch {
+                $errors++
+                Log "[X] Errore download $($file.name): $($_.Exception.Message)"
+            }
+            
+            # Aggiorna progresso
+            $progress = [Math]::Round(($downloaded / $filesToDownload.Count) * 100)
+            Update-Progress $progress
+            Pump-UI
+        }
+
+        # --- 5. Report finale ---
+        Log ""
+        Log "==============================================================================================="
+        Log "[OK] FULL UPDATE COMPLETATO!"
+        Log "     File scaricati: $downloaded / $($filesToDownload.Count)"
+        if($errors -gt 0) { Log "[!] Errori: $errors" }
+        Log "     Backup salvato in: $backupDir"
+        Log "==============================================================================================="
+        
+        Update-Progress 100
+        Update-Status "[OK] Full Update completato ($downloaded file)" $successColor
+        Flush-LogBuffer;Pump-UI
+
+        # --- 6. Riavvio automatico con il nuovo script ---
+        if ($downloaded -gt 0) {
+            $response = [System.Windows.Forms.MessageBox]::Show(
+                "Aggiornamento completato!`nRiavviare lo script con la nuova versione?",
+                "Riavvio necessario",
+                "YesNo",
+                "Question"
+            )
+            if ($response -eq "Yes") {
+                $exe = if ($isPwsh7) { "pwsh.exe" } else { "powershell.exe" }
+                # Usa il nome dello script corrente (potrebbe essere Manutenzione_PRO_MAX.ps1 o altro)
+                $localScriptPath = $PSCommandPath
+                if (-not (Test-Path $localScriptPath)) {
+                    # Fallback: cerca il file principale
+                    $possibleNames = @("Manutenzione_PRO_MAX.ps1", "Manutenzione_PRO_MAX_v3.ps1")
+                    foreach ($name in $possibleNames) {
+                        $testPath = Join-Path $localDir $name
+                        if (Test-Path $testPath) {
+                            $localScriptPath = $testPath
+                            break
+                        }
+                    }
+                }
+                if ($localScriptPath -and (Test-Path $localScriptPath)) {
+                    Start-Process $exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$localScriptPath`""
+                    $script:isClosing = $true
+                    $script:form.Close()
+                } else {
+                    Log "[X] Impossibile trovare lo script principale per il riavvio."
+                }
+            }
+        }
+
+    } catch {
+        Log "[X] Errore Full Update: $($_.Exception.Message)"
+        if ($_.Exception.Message -match "404") {
+            Log "[!] Verifica che il repository '$($script:repoOwner)/$($script:repoName)' sia pubblico e accessibile."
+        }
+        Update-Status "[X] Errore" $exitColor
+        Update-Progress 100
+        Flush-LogBuffer;Pump-UI
+    }
+}
+    if($script:isClosing -or (Test-Cancel)){return}
+    
+    Log "";Log "==============================================================================================="
+    Log "[>] FULL UPDATE - AGGIORNAMENTO COMPLETO"
+    Log "==============================================================================================="
+    Update-Status "[...] Verifica aggiornamento completo..." $infoColor
+    Flush-LogBuffer;Pump-UI
+
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        
+        # --- 1. Leggi versione remota ---
+        $remoteVersionUrl = $script:githubRawUrl + $script:versionFileName
+        $remoteVersion = (Invoke-WebRequest -Uri $remoteVersionUrl -UseBasicParsing -TimeoutSec 10).Content.Trim()
+        
+        Log "[OK] Versione locale: $($script:currentVersion)"
+        Log "[OK] Versione remota: $remoteVersion"
+
+        if ($remoteVersion -eq $script:currentVersion) {
+            Log "[OK] Tutti i file sono già aggiornati."
+            Update-Status "[OK] Già aggiornato" $successColor
+            Update-Progress 100
+            Flush-LogBuffer;Pump-UI
+            return
+        }
+
+        Log "[!] Nuova versione completa disponibile!"
+        $response = [System.Windows.Forms.MessageBox]::Show(
             "Versione $remoteVersion disponibile.`n`nQuesta operazione aggiornerà TUTTI i file:`n- Script principale (.ps1)`n- Batch di avvio (.bat)`n- Documentazione (README.md)`n- Licenza (LICENSE)`n- Versione (version.txt)`n`nProcedere con l'aggiornamento completo?",
             "Full Update Disponibile",
             "YesNo",
@@ -385,7 +545,7 @@ function Do-FullUpdate {
         New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
         Log "[OK] Backup creato in: $backupDir"
 
-        # --- 4. Lista file da scaricare ---
+        # --- 4. Lista file da scaricare (CON NOMI CORRETTI) ---
         $files = @(
             @{Remote="Manutenzione_PRO_MAX.ps1"; Local="Manutenzione_PRO_MAX.ps1"},
             @{Remote="ManutenzioneProMax.bat"; Local="ManutenzioneProMax.bat"},
