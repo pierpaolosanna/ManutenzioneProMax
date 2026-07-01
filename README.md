@@ -153,7 +153,7 @@ Il tool è modulare: oltre allo script principale, include moduli separati per l
 <img width="994" height="587" alt="Privacy Section" src="https://github.com/user-attachments/assets/a795d653-2164-4b53-aedc-715dcc51cc9a" />
 *Sezione Privacy per disabilitare telemetria di Windows, Office, Edge e Task Scheduler*
 
-## 🚀 Novità della v3.0.2
+## 🚀 Novità della v3.0.3
 
 - ✅ **Modularità**: Script suddiviso in moduli separati (AICHAT.ps1, Search.ps1)
 - ✅ **AI Chat**: Integrazione con Gemini, Groq, Cloudflare e Bynara con supporto agenti, allegati e ricerca web
