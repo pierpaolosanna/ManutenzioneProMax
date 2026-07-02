@@ -1406,6 +1406,44 @@ I file vengono salvati in: $Global:AIChatState.PromptFolder
 	$btnSettings   = AI-New-Btn "Impostazioni" ([System.Drawing.Color]::FromArgb(137, 180, 250)) "Impostazioni" ([System.Drawing.Color]::Black)  # Blu
 	$btnStatistics = AI-New-Btn "Statistiche" ([System.Drawing.Color]::FromArgb(203, 166, 247)) "Statistiche" ([System.Drawing.Color]::Black)
 	$btnVerify     = AI-New-Btn "Verifica" ([System.Drawing.Color]::FromArgb(160, 80, 220)) "Verifica" ([System.Drawing.Color]::Black)
+	$btnWebSearch  = AI-New-Btn "Cerca Web" ([System.Drawing.Color]::FromArgb(255, 200, 100)) "CercaWeb" ([System.Drawing.Color]::Black)
+	
+	$btnWebSearch.Add_Click({
+    # Prendi il testo dalla casella di input
+    $query = $inputBox.Text.Trim()
+    if ([string]::IsNullOrEmpty($query)) {
+        $lblStatus.Text = "● Inserisci una parola da cercare"
+        $lblStatus.ForeColor = [System.Drawing.Color]::FromArgb(243, 139, 168)
+        return
+    }
+    
+    # Mostra stato "ricerca in corso"
+    $lblStatus.Text = "● Ricerca in corso..."
+    $lblStatus.ForeColor = [System.Drawing.Color]::FromArgb(250, 179, 135)
+    [System.Windows.Forms.Application]::DoEvents()
+    
+    try {
+        # Chiama la funzione di ricerca web (DDG + Wiki)
+        $risultato = Search-AIWeb -Query $query
+        
+        # Se non c'è risultato, dai un messaggio
+        if ([string]::IsNullOrEmpty($risultato)) {
+            $risultato = "Nessun risultato trovato per '$query'."
+        }
+        
+        # Mostra il risultato nella chat (come se fosse un messaggio di sistema)
+        AI-Write-Chat $chatBox $risultato "🌐 RICERCA WEB" ([System.Drawing.Color]::FromArgb(255, 215, 0)) $false
+        $inputBox.Clear()
+        $lblStatus.Text = "● Ricerca completata"
+        $lblStatus.ForeColor = [System.Drawing.Color]::FromArgb(166, 227, 161)
+    }
+    catch {
+        $err = $_.Exception.Message
+        AI-Write-Chat $chatBox "Errore durante la ricerca: $err" "ERRORE" ([System.Drawing.Color]::FromArgb(243, 139, 168)) $false
+        $lblStatus.Text = "● Errore ricerca"
+        $lblStatus.ForeColor = [System.Drawing.Color]::FromArgb(243, 139, 168)
+    }
+})
     
     # ---------- EVENTI ----------
     $inputBox.Add_TextChanged({
