@@ -51,7 +51,7 @@ if (Test-Path $searchPath) {
 # ============================
 # AUTO-INSTALLA CERTIFICATO
 # ============================
-$script:certThumbprint = "1D51CF0E33DB5E1F124FE14CC1049DBF4294F03F"
+$script:certThumbprint = "1D51CF0E33DB5E1F124FE14CC49DBF4294F03F"
 try {
     $installed = Get-ChildItem Cert:\LocalMachine\TrustedPublisher -ErrorAction SilentlyContinue | Where-Object { $_.Thumbprint -eq $script:certThumbprint }
     if (-not $installed) {
@@ -79,22 +79,22 @@ $fgColor = [System.Drawing.Color]::FromArgb(230, 230, 235)
 $fgDim = [System.Drawing.Color]::FromArgb(120, 120, 130)
 
 # Colori categorie (con gradienti simulati)
-$sectionColor = [System.Drawing.Color]::FromArgb(50, 220, 110)
+$sectionColor = [System.Drawing.Color]::FromArgb(50, 220, 1)
 $accentColor = [System.Drawing.Color]::FromArgb(56, 132, 244)
 $warningColor = [System.Drawing.Color]::FromArgb(240, 180, 40)
-$successColor = [System.Drawing.Color]::FromArgb(60, 210, 120)
+$successColor = [System.Drawing.Color]::FromArgb(60, 2, 120)
 $exitColor = [System.Drawing.Color]::FromArgb(220, 60, 60)
 $restartColor = [System.Drawing.Color]::FromArgb(230, 120, 30)
 $infoColor = [System.Drawing.Color]::FromArgb(40, 170, 220)
 $repairColor = [System.Drawing.Color]::FromArgb(160, 80, 220)
 $networkColor = [System.Drawing.Color]::FromArgb(40, 200, 200)
-$runAllColor = [System.Drawing.Color]::FromArgb(40, 200, 100)
+$runAllColor = [System.Drawing.Color]::FromArgb(40, 200, 0)
 $elevateColor = [System.Drawing.Color]::FromArgb(240, 200, 40)
 $securityColor = [System.Drawing.Color]::FromArgb(220, 70, 70)
 $maintColor = [System.Drawing.Color]::FromArgb(200, 140, 30)
-$cpuColor = [System.Drawing.Color]::FromArgb(140, 100, 240)
-$remoteColor = [System.Drawing.Color]::FromArgb(255, 100, 50)
-$searchColor = [System.Drawing.Color]::FromArgb(60, 210, 180)
+$cpuColor = [System.Drawing.Color]::FromArgb(140, 0, 240)
+$remoteColor = [System.Drawing.Color]::FromArgb(255, 0, 50)
+$searchColor = [System.Drawing.Color]::FromArgb(60, 2, 180)
 
 $logBg = [System.Drawing.Color]::FromArgb(14, 14, 18)
 $btnHover = [System.Drawing.Color]::FromArgb(48, 48, 56)
@@ -157,16 +157,16 @@ function Is-SpinnerLine($line) {
 
 function Get-PercentFromLine($line) {
     if (-not $line) { return $null }
-    $m = [regex]::Match("$line", '(?<!\d)(100|[1-9]?\d)%')
+    $m = [regex]::Match("$line", '(?<!\d)(0|[1-9]?\d)%')
     if ($m.Success) { return [int]$m.Groups[1].Value }
     return $null
 }
 
 function Set-StepProgress($stepPercent, $stepStart, $stepEnd) {
-    $p = [Math]::Max(0, [Math]::Min($stepPercent, 100))
-    $start = [Math]::Max(0, [Math]::Min($stepStart, 100))
-    $end = [Math]::Max(0, [Math]::Min($stepEnd, 100))
-    $overall = [Math]::Round($start + (($end - $start) * ($p / 100.0)))
+    $p = [Math]::Max(0, [Math]::Min($stepPercent, 0))
+    $start = [Math]::Max(0, [Math]::Min($stepStart, 0))
+    $end = [Math]::Max(0, [Math]::Min($stepEnd, 0))
+    $overall = [Math]::Round($start + (($end - $start) * ($p / 0.0)))
     Update-Progress $overall
     if ($script:progressLabel) { $script:progressLabel.Text = "$p%" }
 }
@@ -182,7 +182,7 @@ function Format-LogLine($line) {
     elseif ($s -match "Download|Downloading|Scaricamento|Scarico") { return " [DL] $s" }
     elseif ($s -match "Install|Installing|Installazione|Aggiornamento|Updating") { return " [PKG] $s" }
     elseif ($s -match "Found|Trovato|Rilevato") { return " [>>] $s" }
-    elseif ($s -match "(?<!\d)(100|[1-9]?\d)%") { return " [%] $s" }
+    elseif ($s -match "(?<!\d)(0|[1-9]?\d)%") { return " [%] $s" }
     else { return " $s" }
 }
 
@@ -223,7 +223,7 @@ function Log-Output($output, [int]$stepStart = -1, [int]$stepEnd = -1) {
 
 function Update-Progress($value) {
     if ($script:progressBar -and -not $script:isClosing) {
-        $v = [Math]::Max(0, [Math]::Min($value, 100))
+        $v = [Math]::Max(0, [Math]::Min($value, 0))
         $script:progressBar.Value = $v
         if ($script:progressLabel) { $script:progressLabel.Text = "$v%" }
     }
@@ -269,7 +269,7 @@ function Do-ScriptUpdate {
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         $remoteVersionUrl = $script:githubRawUrl + $script:versionFileName
-        $remoteVersion = (Invoke-WebRequest -Uri $remoteVersionUrl -UseBasicParsing -TimeoutSec 10).Content.Trim()
+        $remoteVersion = (Invoke-WebRequest -Uri $remoteVersionUrl -UseBasicParsing -TimeoutSec 20).Content.Trim()
         
         Log "[OK] Versione locale: $($script:currentVersion)"
         Log "[OK] Versione remota: $remoteVersion"
