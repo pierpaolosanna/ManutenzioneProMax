@@ -9,13 +9,14 @@ color 0A
 if "%~1"=="--post-install" goto :POST_INSTALL_CHECK
 
 :: =====================================================
-:: HEADER PRINCIPALE
+:: HEADER PRINCIPALE E SCELTA CON VALIDAZIONE
 :: =====================================================
+:MENU_PRINCIPALE
 cls
 echo.
 echo ============================================================
 echo.
-echo              MANUTENZIONE PRO MAX
+echo              MANUTENZIONE PRO MAX v3.0
 echo.
 echo ============================================================
 echo.
@@ -25,6 +26,26 @@ echo.
 echo ------------------------------------------------------------
 echo.
 set /p scelta="   Scegli (1 o 2): "
+
+:: Validazione input
+if "%scelta%"=="1" goto :CONTINUA
+if "%scelta%"=="2" goto :CONTINUA
+
+:: Input non valido
+echo.
+echo ============================================================
+echo.
+echo        [ERRORE] Scelta non valida!
+echo.
+echo        Puoi inserire solo 1 o 2.
+echo        Premi un tasto per riprovare...
+echo.
+echo ============================================================
+echo.
+pause >nul
+goto :MENU_PRINCIPALE
+
+:CONTINUA
 
 :: =====================================================
 :: Verifica presenza di PowerShell 7 (pwsh)
@@ -93,12 +114,17 @@ if %errorlevel% equ 0 (
     echo        ---------------------------------------------------
     echo.
     
+    :: Assegna un titolo univoco a questa finestra
+    set "WIN_TITLE=Manutenzione_Install_%random%"
+    title %WIN_TITLE%
+    
     set "BAT_PATH=%~f0"
     
     echo        Preparazione al riavvio...
     timeout /t 3 /nobreak >nul
     
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '!BAT_PATH!' -ArgumentList '--post-install','%scelta%' -Verb RunAs"
+    :: CORRETTO: Sintassi pulita per PowerShell (usata la stringa letterale singola)
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '!BAT_PATH!' -ArgumentList '--post-install','!scelta!','!WIN_TITLE!' -Verb RunAs"
     
     exit /b
 ) else (
@@ -131,7 +157,9 @@ echo.
 echo ============================================================
 echo.
 
+:: Recupera la scelta originale e il titolo della finestra precedente
 set "scelta=%~2"
+set "WIN_TITLE=%~3"
 
 where pwsh >nul 2>&1
 if %errorlevel% equ 0 (
@@ -156,10 +184,20 @@ if %errorlevel% equ 0 (
 )
 
 echo.
+
+:: Chiudi la finestra precedente usando il suo titolo univoco
+if not "%WIN_TITLE%"=="" (
+    echo        Chiusura finestra precedente...
+    taskkill /FI "WINDOWTITLE eq %WIN_TITLE%" /F >nul 2>&1
+    timeout /t 1 /nobreak >nul
+    echo        [OK] Finestra precedente chiusa.
+    echo.
+)
+
 goto :AVVIO_SCRIPT
 
 :: =====================================================
-:: SEZIONE: Avvio script PowerShell
+:: SEZIONE: Avvio script PowerShell - ESECUZIONE SINGOLA
 :: =====================================================
 :AVVIO_SCRIPT
 echo ------------------------------------------------------------
@@ -171,11 +209,24 @@ if "%scelta%"=="2" (
     echo        Modalita: AMMINISTRATORE
     echo        (Verra richiesta l elevazione dei privilegi)
     echo.
-    %PS% -NoProfile -ExecutionPolicy Bypass -Command "Start-Process '%PS%' -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File \"%~dp0Manutenzione_PRO_MAX.ps1\"' -Verb RunAs"
+    
+    :: Crea file batch temporaneo
+    set "TEMP_BAT=%temp%\manutenzione_admin_%random%.bat"
+    echo @echo off > "!TEMP_BAT!"
+    echo "%PS%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0Manutenzione_PRO_MAX.ps1" >> "!TEMP_BAT!"
+    
+    :: CORRETTO: Rimosse le virgolette strane \"' ... '\" che generavano l'errore
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '!TEMP_BAT!' -Verb RunAs"
+    
+    :: Elimina il file temp e chiudi questo prompt
+    ping -n 2 127.0.0.1 >nul
+    del "!TEMP_BAT!" >nul 2>&1
+    exit /b
+    
 ) else (
     echo        Modalita: UTENTE
     echo.
-    %PS% -NoProfile -ExecutionPolicy Bypass -File "%~dp0Manutenzione_PRO_MAX.ps1"
+    "%PS%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0Manutenzione_PRO_MAX.ps1"
 )
 
 endlocal
