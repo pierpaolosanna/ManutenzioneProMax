@@ -1,456 +1,756 @@
 # ============================================================
-# Search.ps1 - Modulo Ricerca per Manutenzione PRO MAX
-# Versione: 1.0.0
-# Data: 2026-07-01
-# Descrizione: Fornisce funzionalità di ricerca rapida file e contenuti
+# Search.ps1 - Modulo Ricerca File v3.0.3
+# Con Cache, Log e Apertura File (FINAL)
 # ============================================================
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-# ---------- FUNZIONI DI RICERCA ----------
-function Search-Files {
-    param(
-        [string]$Path = $env:USERPROFILE,
-        [string]$Pattern = "*",
-        [string]$Content = "",
-        [int]$MaxResults = 50,
-        [switch]$Recurse
-    )
-    
-    $results = @()
-    $searchPath = if ($Recurse) { $Path } else { $Path }
-    
-    try {
-        # Ricerca per pattern nome file
-        $items = Get-ChildItem -Path $searchPath -Filter $Pattern -File -ErrorAction SilentlyContinue
-        if ($Recurse) {
-            $items = Get-ChildItem -Path $searchPath -Filter $Pattern -File -Recurse -ErrorAction SilentlyContinue
-        }
-        
-        # Filtra per contenuto se specificato
-        if ($Content -and $Content -ne "") {
-            $items = $items | Where-Object {
-                try {
-                    $text = Get-Content -Path $_.FullName -Raw -ErrorAction SilentlyContinue
-                    $text -match $Content
-                } catch { $false }
+# ============================================================
+# VARIABILI GLOBALI
+# ============================================================
+$script:Job = $null
+$script:Timer = $null
+$script:IsSearching = $false
+$script:Results = $null
+$script:StartTime = $null
+$script:CacheFile = "$env:APPDATA\SearchCache.json"
+$script:LogFile = "$env:APPDATA\SearchLog.txt"
+
+# ============================================================
+# FUNZIONI DI LOG E CACHE
+# ============================================================
+
+function Write-SearchLog {
+    param($Message)
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    "$timestamp - $Message" | Out-File -FilePath $script:LogFile -Append -Encoding UTF8 -ErrorAction SilentlyContinue
+}
+
+function ConvertTo-Hashtable {
+    param($obj)
+    if ($obj -eq $null) { return @{} }
+    if ($obj -is [PSCustomObject]) {
+        $hash = @{}
+        foreach ($prop in $obj.PSObject.Properties) {
+            $value = $prop.Value
+            if ($value -is [PSCustomObject] -or $value -is [System.Management.Automation.PSObject]) {
+                $hash[$prop.Name] = ConvertTo-Hashtable $value
+            } elseif ($value -is [System.Collections.IEnumerable] -and $value -isnot [string]) {
+                $list = @()
+                foreach ($item in $value) {
+                    if ($item -is [PSCustomObject]) {
+                        $list += ConvertTo-Hashtable $item
+                    } else {
+                        $list += $item
+                    }
+                }
+                $hash[$prop.Name] = $list
+            } else {
+                $hash[$prop.Name] = $value
             }
         }
-        
-        $results = $items | Select-Object -First $MaxResults | ForEach-Object {
-            [PSCustomObject]@{
-                Name = $_.Name
-                Path = $_.FullName
-                Size = $_.Length
-                Modified = $_.LastWriteTime
-                Folder = $_.DirectoryName
-            }
-        }
-    } catch {
-        Write-Error "Errore durante la ricerca: $($_.Exception.Message)"
+        return $hash
     }
-    
+    return $obj
+}
+
+function Get-SearchCache {
+    if (Test-Path $script:CacheFile) {
+        try {
+            $json = Get-Content -Path $script:CacheFile -Raw -ErrorAction SilentlyContinue
+            if ([string]::IsNullOrWhiteSpace($json)) { return @{} }
+            $obj = $json | ConvertFrom-Json -ErrorAction SilentlyContinue
+            if ($obj -eq $null) { return @{} }
+            return ConvertTo-Hashtable $obj
+        } catch {
+            Write-SearchLog "ERRORE lettura cache: $($_.Exception.Message)"
+            return @{}
+        }
+    }
+    return @{}
+}
+
+function Save-SearchCache {
+    param($Cache)
+    try {
+        if ($Cache -eq $null -or $Cache.Count -eq 0) {
+            if (Test-Path $script:CacheFile) {
+                Remove-Item -Path $script:CacheFile -Force -ErrorAction SilentlyContinue
+            }
+            return
+        }
+        $json = $Cache | ConvertTo-Json -Depth 10 -ErrorAction SilentlyContinue
+        $json | Out-File -FilePath $script:CacheFile -Encoding UTF8 -Force -ErrorAction SilentlyContinue
+    } catch {
+        Write-SearchLog "ERRORE salvataggio cache: $($_.Exception.Message)"
+    }
+}
+
+function Get-SearchKey {
+    param($SearchType, $Path, $Pattern, $Content, $Recurse, $MinSizeMB = 0)
+    $key = "$SearchType|$Path|$Pattern|$Content|$Recurse|$MinSizeMB"
+    return [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($key))
+}
+
+# ============================================================
+# FUNZIONI DI RICERCA
+# ============================================================
+
+function Search-FilesPure {
+    param($Path, $Pattern, $Content, $Recurse, $MaxResults = 500)
+    $results = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $getParams = @{
+        Path = $Path
+        Filter = $Pattern
+        File = $true
+        ErrorAction = 'SilentlyContinue'
+    }
+    if ($Recurse) { $getParams.Recurse = $true }
+    $files = Get-ChildItem @getParams
+    $total = $files.Count
+    $processed = 0
+    foreach ($file in $files) {
+        $processed++
+        $percent = if ($total -gt 0) { [int](($processed / $total) * 100) } else { 0 }
+        Write-Progress -Activity "Ricerca file..." -Status "$processed di $total" -PercentComplete $percent
+        if ($Content -and $Content -ne "") {
+            try {
+                if (Select-String -Path $file.FullName -Pattern $Content -Quiet -ErrorAction SilentlyContinue) {
+                    $results.Add([PSCustomObject]@{
+                        Nome = $file.Name
+                        Percorso = $file.FullName
+                        Dimensione = $file.Length
+                        Modificato = $file.LastWriteTime
+                    })
+                }
+            } catch {}
+        } else {
+            $results.Add([PSCustomObject]@{
+                Nome = $file.Name
+                Percorso = $file.FullName
+                Dimensione = $file.Length
+                Modificato = $file.LastWriteTime
+            })
+        }
+        if ($results.Count -ge $MaxResults) { break }
+    }
+    Write-Progress -Activity "Ricerca file..." -Completed
     return $results
 }
 
-function Search-Duplicates {
-    param(
-        [string]$Path = $env:USERPROFILE,
-        [switch]$Recurse,
-        [int]$MaxResults = 20
-    )
-    
+function Search-DuplicatesPure {
+    param($Path, $Recurse, $MaxResults = 100)
+    $results = @()
+    $getParams = @{
+        Path = $Path
+        File = $true
+        ErrorAction = 'SilentlyContinue'
+    }
+    if ($Recurse) { $getParams.Recurse = $true }
+    $files = Get-ChildItem @getParams
+    $total = $files.Count
+    $processed = 0
     $groups = @{}
-    $searchPath = if ($Recurse) { $Path } else { $Path }
-    
-    try {
-        $files = Get-ChildItem -Path $searchPath -File -Recurse:$Recurse -ErrorAction SilentlyContinue
-        
-        foreach ($file in $files) {
-            try {
-                $hash = Get-FileHash -Path $file.FullName -Algorithm MD5 -ErrorAction SilentlyContinue
-                if ($hash) {
-                    $key = "$($file.Length)_$($hash.Hash)"
-                    if (-not $groups.ContainsKey($key)) {
-                        $groups[$key] = @()
-                    }
-                    $groups[$key] += $file.FullName
-                }
-            } catch {}
-        }
-        
-        $duplicates = $groups.Values | Where-Object { $_.Count -gt 1 } | Select-Object -First $MaxResults
-        return $duplicates
-    } catch {
-        Write-Error "Errore durante la ricerca duplicati: $($_.Exception.Message)"
-        return @()
-    }
-}
-
-function Search-LargeFiles {
-    param(
-        [string]$Path = $env:USERPROFILE,
-        [int]$MinSizeMB = 100,
-        [int]$MaxResults = 20,
-        [switch]$Recurse
-    )
-    
-    $minBytes = $MinSizeMB * 1MB
-    $searchPath = if ($Recurse) { $Path } else { $Path }
-    
-    try {
-        $files = Get-ChildItem -Path $searchPath -File -Recurse:$Recurse -ErrorAction SilentlyContinue |
-            Where-Object { $_.Length -gt $minBytes } |
-            Sort-Object Length -Descending |
-            Select-Object -First $MaxResults
-        
-        return $files | ForEach-Object {
-            [PSCustomObject]@{
-                Name = $_.Name
-                Path = $_.FullName
-                SizeMB = [Math]::Round($_.Length / 1MB, 2)
-                Modified = $_.LastWriteTime
+    foreach ($file in $files) {
+        $processed++
+        $percent = if ($total -gt 0) { [int](($processed / $total) * 100) } else { 0 }
+        Write-Progress -Activity "Analisi duplicati..." -Status "$processed di $total" -PercentComplete $percent
+        try {
+            $hash = Get-FileHash -Path $file.FullName -Algorithm MD5 -ErrorAction SilentlyContinue
+            if ($hash) {
+                $key = "$($file.Length)_$($hash.Hash)"
+                if (-not $groups.ContainsKey($key)) { $groups[$key] = @() }
+                $groups[$key] += $file.FullName
             }
-        }
-    } catch {
-        Write-Error "Errore durante la ricerca file grandi: $($_.Exception.Message)"
-        return @()
+        } catch {}
     }
+    Write-Progress -Activity "Analisi duplicati..." -Completed
+    foreach ($group in $groups.Values | Where-Object { $_.Count -gt 1 }) {
+        $results += ,$group
+        if ($results.Count -ge $MaxResults) { break }
+    }
+    return $results
 }
 
-# ---------- FUNZIONE PRINCIPALE ----------
+function Search-LargePure {
+    param($Path, $Recurse, $MinSizeMB = 100, $MaxResults = 50)
+    $results = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $minBytes = $MinSizeMB * 1MB
+    $getParams = @{
+        Path = $Path
+        File = $true
+        ErrorAction = 'SilentlyContinue'
+    }
+    if ($Recurse) { $getParams.Recurse = $true }
+    $files = Get-ChildItem @getParams | Where-Object { $_.Length -gt $minBytes } | Sort-Object Length -Descending
+    $total = $files.Count
+    $processed = 0
+    foreach ($file in $files) {
+        $processed++
+        $percent = if ($total -gt 0) { [int](($processed / $total) * 100) } else { 0 }
+        Write-Progress -Activity "Ricerca file grandi..." -Status "$processed di $total" -PercentComplete $percent
+        $results.Add([PSCustomObject]@{
+            Nome = $file.Name
+            Percorso = $file.FullName
+            Dimensione = $file.Length
+            Modificato = $file.LastWriteTime
+        })
+        if ($results.Count -ge $MaxResults) { break }
+    }
+    Write-Progress -Activity "Ricerca file grandi..." -Completed
+    return $results
+}
+
+# ============================================================
+# FUNZIONE PRINCIPALE UI
+# ============================================================
+
 function Show-SearchDialog {
+    # ---- Creazione Finestra ----
     $form = New-Object System.Windows.Forms.Form
-    $form.Text = "🔍 Ricerca Rapida"
-    $form.Size = New-Object System.Drawing.Size(900, 600)
-    $form.MinimumSize = New-Object System.Drawing.Size(800, 500)
-    $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterParent
-    $form.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 24)
-    $form.ForeColor = [System.Drawing.Color]::FromArgb(230, 230, 235)
-    $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::Sizable
-    $form.MaximizeBox = $true
-    $form.MinimizeBox = $true
-    
-    # Layout principale
-    $mainPanel = New-Object System.Windows.Forms.TableLayoutPanel
-    $mainPanel.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $mainPanel.RowCount = 2
-    $mainPanel.ColumnCount = 1
-    $mainPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 120)))
-    $mainPanel.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
-    $mainPanel.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 24)
-    $form.Controls.Add($mainPanel)
-    
-    # Pannello superiore (filtri)
-    $topPanel = New-Object System.Windows.Forms.Panel
-    $topPanel.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $topPanel.BackColor = [System.Drawing.Color]::FromArgb(28, 28, 34)
-    $topPanel.Padding = New-Object System.Windows.Forms.Padding(15)
-    $mainPanel.Controls.Add($topPanel, 0, 0)
-    
-    # Percorso
+    $form.Text = "🔍 Ricerca File v6.1"
+    $form.Size = New-Object System.Drawing.Size(920, 680)
+    $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+    $form.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 40)
+    $form.ForeColor = [System.Drawing.Color]::White
+    $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $form.KeyPreview = $true
+
+    # ---- Layout ----
+    $table = New-Object System.Windows.Forms.TableLayoutPanel
+    $table.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $table.ColumnCount = 1
+    $table.RowCount = 5
+    $table.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 40)))
+    $table.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 40)))
+    $table.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 65)))
+    $table.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+    $table.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 25)))
+    $form.Controls.Add($table)
+
+    # ---- RIGA 1: PERCORSO ----
+    $panelPath = New-Object System.Windows.Forms.Panel
+    $panelPath.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $panelPath.Padding = New-Object System.Windows.Forms.Padding(10, 5, 10, 5)
+    $table.Controls.Add($panelPath, 0, 0)
+
     $lblPath = New-Object System.Windows.Forms.Label
-    $lblPath.Text = "📁 Percorso:"
-    $lblPath.Location = New-Object System.Drawing.Point(15, 15)
-    $lblPath.Size = New-Object System.Drawing.Size(80, 25)
-    $lblPath.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $lblPath.ForeColor = [System.Drawing.Color]::FromArgb(166, 173, 200)
-    $topPanel.Controls.Add($lblPath)
-    
+    $lblPath.Text = "Percorso:"
+    $lblPath.Location = New-Object System.Drawing.Point(10, 10)
+    $lblPath.Size = New-Object System.Drawing.Size(70, 25)
+    $lblPath.ForeColor = [System.Drawing.Color]::White
+    $panelPath.Controls.Add($lblPath)
+
     $txtPath = New-Object System.Windows.Forms.TextBox
-    $txtPath.Location = New-Object System.Drawing.Point(100, 12)
-    $txtPath.Size = New-Object System.Drawing.Size(500, 28)
-    $txtPath.BackColor = [System.Drawing.Color]::FromArgb(49, 50, 68)
-    $txtPath.ForeColor = [System.Drawing.Color]::FromArgb(230, 230, 235)
-    $txtPath.Font = New-Object System.Drawing.Font("Segoe UI", 10)
+    $txtPath.Location = New-Object System.Drawing.Point(85, 8)
+    $txtPath.Size = New-Object System.Drawing.Size(550, 25)
+    $txtPath.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 60)
+    $txtPath.ForeColor = [System.Drawing.Color]::White
     $txtPath.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-    $txtPath.Text = $env:USERPROFILE
-    $topPanel.Controls.Add($txtPath)
-    
+    $txtPath.Text = "F:\DOWNLOAD\EASY"
+    $panelPath.Controls.Add($txtPath)
+
     $btnBrowse = New-Object System.Windows.Forms.Button
-    $btnBrowse.Text = "📂 Sfoglia"
-    $btnBrowse.Location = New-Object System.Drawing.Point(610, 10)
-    $btnBrowse.Size = New-Object System.Drawing.Size(100, 32)
-    $btnBrowse.BackColor = [System.Drawing.Color]::FromArgb(56, 132, 244)
+    $btnBrowse.Text = "Sfoglia..."
+    $btnBrowse.Location = New-Object System.Drawing.Point(645, 8)
+    $btnBrowse.Size = New-Object System.Drawing.Size(80, 25)
+    $btnBrowse.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 80)
     $btnBrowse.ForeColor = [System.Drawing.Color]::White
     $btnBrowse.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $btnBrowse.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $btnBrowse.Cursor = [System.Windows.Forms.Cursors]::Hand
     $btnBrowse.Add_Click({
         $fbd = New-Object System.Windows.Forms.FolderBrowserDialog
-        $fbd.Description = "Seleziona la cartella da cercare"
         $fbd.SelectedPath = $txtPath.Text
         if ($fbd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             $txtPath.Text = $fbd.SelectedPath
         }
     })
-    $topPanel.Controls.Add($btnBrowse)
-    
-    # Pattern e Contenuto
+    $panelPath.Controls.Add($btnBrowse)
+
+    # ---- RIGA 2: OPZIONI ----
+    $panelOptions = New-Object System.Windows.Forms.Panel
+    $panelOptions.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $panelOptions.Padding = New-Object System.Windows.Forms.Padding(10, 5, 10, 5)
+    $table.Controls.Add($panelOptions, 0, 1)
+
+    $chkRecurse = New-Object System.Windows.Forms.CheckBox
+    $chkRecurse.Text = "Ricorsivo"
+    $chkRecurse.Location = New-Object System.Drawing.Point(10, 10)
+    $chkRecurse.Size = New-Object System.Drawing.Size(100, 25)
+    $chkRecurse.Checked = $true
+    $chkRecurse.ForeColor = [System.Drawing.Color]::White
+    $panelOptions.Controls.Add($chkRecurse)
+
     $lblPattern = New-Object System.Windows.Forms.Label
-    $lblPattern.Text = "🔎 Nome:"
-    $lblPattern.Location = New-Object System.Drawing.Point(15, 50)
-    $lblPattern.Size = New-Object System.Drawing.Size(80, 25)
-    $lblPattern.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $lblPattern.ForeColor = [System.Drawing.Color]::FromArgb(166, 173, 200)
-    $topPanel.Controls.Add($lblPattern)
-    
+    $lblPattern.Text = "Filtro nome:"
+    $lblPattern.Location = New-Object System.Drawing.Point(120, 12)
+    $lblPattern.Size = New-Object System.Drawing.Size(80, 20)
+    $lblPattern.ForeColor = [System.Drawing.Color]::White
+    $panelOptions.Controls.Add($lblPattern)
+
     $txtPattern = New-Object System.Windows.Forms.TextBox
-    $txtPattern.Location = New-Object System.Drawing.Point(100, 47)
-    $txtPattern.Size = New-Object System.Drawing.Size(200, 28)
-    $txtPattern.BackColor = [System.Drawing.Color]::FromArgb(49, 50, 68)
-    $txtPattern.ForeColor = [System.Drawing.Color]::FromArgb(230, 230, 235)
-    $txtPattern.Font = New-Object System.Drawing.Font("Segoe UI", 10)
+    $txtPattern.Location = New-Object System.Drawing.Point(205, 10)
+    $txtPattern.Size = New-Object System.Drawing.Size(150, 25)
+    $txtPattern.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 60)
+    $txtPattern.ForeColor = [System.Drawing.Color]::White
     $txtPattern.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
     $txtPattern.Text = "*"
-    $topPanel.Controls.Add($txtPattern)
-    
+    $panelOptions.Controls.Add($txtPattern)
+
     $lblContent = New-Object System.Windows.Forms.Label
-    $lblContent.Text = "📄 Contenuto:"
-    $lblContent.Location = New-Object System.Drawing.Point(320, 50)
-    $lblContent.Size = New-Object System.Drawing.Size(80, 25)
-    $lblContent.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $lblContent.ForeColor = [System.Drawing.Color]::FromArgb(166, 173, 200)
-    $topPanel.Controls.Add($lblContent)
-    
+    $lblContent.Text = "Contenuto:"
+    $lblContent.Location = New-Object System.Drawing.Point(370, 12)
+    $lblContent.Size = New-Object System.Drawing.Size(70, 20)
+    $lblContent.ForeColor = [System.Drawing.Color]::White
+    $panelOptions.Controls.Add($lblContent)
+
     $txtContent = New-Object System.Windows.Forms.TextBox
-    $txtContent.Location = New-Object System.Drawing.Point(410, 47)
-    $txtContent.Size = New-Object System.Drawing.Size(300, 28)
-    $txtContent.BackColor = [System.Drawing.Color]::FromArgb(49, 50, 68)
-    $txtContent.ForeColor = [System.Drawing.Color]::FromArgb(230, 230, 235)
-    $txtContent.Font = New-Object System.Drawing.Font("Segoe UI", 10)
+    $txtContent.Location = New-Object System.Drawing.Point(445, 10)
+    $txtContent.Size = New-Object System.Drawing.Size(280, 25)
+    $txtContent.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 60)
+    $txtContent.ForeColor = [System.Drawing.Color]::White
     $txtContent.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-    $topPanel.Controls.Add($txtContent)
-    
-    # Opzioni
-    $chkRecurse = New-Object System.Windows.Forms.CheckBox
-    $chkRecurse.Text = "🔁 Ricorsivo"
-    $chkRecurse.Location = New-Object System.Drawing.Point(15, 85)
-    $chkRecurse.Size = New-Object System.Drawing.Size(100, 25)
-    $chkRecurse.ForeColor = [System.Drawing.Color]::FromArgb(166, 173, 200)
-    $chkRecurse.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $chkRecurse.Checked = $true
-    $topPanel.Controls.Add($chkRecurse)
-    
-    $lblMax = New-Object System.Windows.Forms.Label
-    $lblMax.Text = "Max risultati:"
-    $lblMax.Location = New-Object System.Drawing.Point(130, 85)
-    $lblMax.Size = New-Object System.Drawing.Size(90, 25)
-    $lblMax.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $lblMax.ForeColor = [System.Drawing.Color]::FromArgb(166, 173, 200)
-    $topPanel.Controls.Add($lblMax)
-    
-    $numMax = New-Object System.Windows.Forms.NumericUpDown
-    $numMax.Location = New-Object System.Drawing.Point(225, 82)
-    $numMax.Size = New-Object System.Drawing.Size(80, 28)
-    $numMax.BackColor = [System.Drawing.Color]::FromArgb(49, 50, 68)
-    $numMax.ForeColor = [System.Drawing.Color]::FromArgb(230, 230, 235)
-    $numMax.Font = New-Object System.Drawing.Font("Segoe UI", 10)
-    $numMax.Minimum = 1
-    $numMax.Maximum = 500
-    $numMax.Value = 50
-    $numMax.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-    $topPanel.Controls.Add($numMax)
-    
+    $panelOptions.Controls.Add($txtContent)
+
+    # ---- RIGA 3: PULSANTI ----
+    $panelButtons = New-Object System.Windows.Forms.Panel
+    $panelButtons.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $panelButtons.Padding = New-Object System.Windows.Forms.Padding(10, 5, 10, 5)
+    $table.Controls.Add($panelButtons, 0, 2)
+
+    # Pulsanti (altezza 35)
     $btnSearch = New-Object System.Windows.Forms.Button
     $btnSearch.Text = "🔍 Cerca"
-    $btnSearch.Location = New-Object System.Drawing.Point(330, 80)
-    $btnSearch.Size = New-Object System.Drawing.Size(100, 32)
-    $btnSearch.BackColor = [System.Drawing.Color]::FromArgb(60, 210, 120)
+    $btnSearch.Location = New-Object System.Drawing.Point(10, 8)
+    $btnSearch.Size = New-Object System.Drawing.Size(85, 35)
+    $btnSearch.BackColor = [System.Drawing.Color]::FromArgb(60, 180, 100)
     $btnSearch.ForeColor = [System.Drawing.Color]::White
     $btnSearch.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
     $btnSearch.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $btnSearch.Cursor = [System.Windows.Forms.Cursors]::Hand
-    $topPanel.Controls.Add($btnSearch)
-    
+    $panelButtons.Controls.Add($btnSearch)
+
     $btnDuplicates = New-Object System.Windows.Forms.Button
     $btnDuplicates.Text = "🔁 Duplicati"
-    $btnDuplicates.Location = New-Object System.Drawing.Point(440, 80)
-    $btnDuplicates.Size = New-Object System.Drawing.Size(100, 32)
-    $btnDuplicates.BackColor = [System.Drawing.Color]::FromArgb(160, 80, 220)
+    $btnDuplicates.Location = New-Object System.Drawing.Point(105, 8)
+    $btnDuplicates.Size = New-Object System.Drawing.Size(85, 35)
+    $btnDuplicates.BackColor = [System.Drawing.Color]::FromArgb(140, 80, 200)
     $btnDuplicates.ForeColor = [System.Drawing.Color]::White
     $btnDuplicates.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
     $btnDuplicates.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $btnDuplicates.Cursor = [System.Windows.Forms.Cursors]::Hand
-    $topPanel.Controls.Add($btnDuplicates)
-    
+    $panelButtons.Controls.Add($btnDuplicates)
+
     $btnLarge = New-Object System.Windows.Forms.Button
     $btnLarge.Text = "📦 File Grandi"
-    $btnLarge.Location = New-Object System.Drawing.Point(550, 80)
-    $btnLarge.Size = New-Object System.Drawing.Size(100, 32)
-    $btnLarge.BackColor = [System.Drawing.Color]::FromArgb(240, 180, 40)
+    $btnLarge.Location = New-Object System.Drawing.Point(200, 8)
+    $btnLarge.Size = New-Object System.Drawing.Size(85, 35)
+    $btnLarge.BackColor = [System.Drawing.Color]::FromArgb(220, 160, 40)
     $btnLarge.ForeColor = [System.Drawing.Color]::White
     $btnLarge.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
     $btnLarge.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $btnLarge.Cursor = [System.Windows.Forms.Cursors]::Hand
-    $topPanel.Controls.Add($btnLarge)
-    
-    # Pannello risultati
-    $resultPanel = New-Object System.Windows.Forms.Panel
-    $resultPanel.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $resultPanel.BackColor = [System.Drawing.Color]::FromArgb(14, 14, 18)
-    $mainPanel.Controls.Add($resultPanel, 0, 1)
-    
+    $panelButtons.Controls.Add($btnLarge)
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = "⛔ Annulla"
+    $btnCancel.Location = New-Object System.Drawing.Point(295, 8)
+    $btnCancel.Size = New-Object System.Drawing.Size(75, 35)
+    $btnCancel.BackColor = [System.Drawing.Color]::FromArgb(200, 60, 60)
+    $btnCancel.ForeColor = [System.Drawing.Color]::White
+    $btnCancel.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnCancel.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $btnCancel.Enabled = $false
+    $panelButtons.Controls.Add($btnCancel)
+
+    $btnClearCache = New-Object System.Windows.Forms.Button
+    $btnClearCache.Text = "🗑️ Cache"
+    $btnClearCache.Location = New-Object System.Drawing.Point(380, 8)
+    $btnClearCache.Size = New-Object System.Drawing.Size(70, 35)
+    $btnClearCache.BackColor = [System.Drawing.Color]::FromArgb(100, 100, 120)
+    $btnClearCache.ForeColor = [System.Drawing.Color]::White
+    $btnClearCache.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnClearCache.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
+    $btnClearCache.Add_Click({
+        if (Test-Path $script:CacheFile) {
+            Remove-Item -Path $script:CacheFile -Force -ErrorAction SilentlyContinue
+            $lblStatus.Text = "✅ Cache svuotata!"
+            Write-SearchLog "Cache svuotata manualmente"
+        } else {
+            $lblStatus.Text = "ℹ️ Nessuna cache trovata"
+        }
+    })
+    $panelButtons.Controls.Add($btnClearCache)
+
+    $btnViewLog = New-Object System.Windows.Forms.Button
+    $btnViewLog.Text = "📋 Log"
+    $btnViewLog.Location = New-Object System.Drawing.Point(460, 8)
+    $btnViewLog.Size = New-Object System.Drawing.Size(60, 35)
+    $btnViewLog.BackColor = [System.Drawing.Color]::FromArgb(100, 100, 120)
+    $btnViewLog.ForeColor = [System.Drawing.Color]::White
+    $btnViewLog.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $btnViewLog.Font = New-Object System.Drawing.Font("Segoe UI", 8.5, [System.Drawing.FontStyle]::Bold)
+    $btnViewLog.Add_Click({
+        if (Test-Path $script:LogFile) {
+            Start-Process notepad.exe $script:LogFile
+        } else {
+            $lblStatus.Text = "ℹ️ Nessun log trovato"
+        }
+    })
+    $panelButtons.Controls.Add($btnViewLog)
+
+    # Progress Bar e Status
+    $progressBar = New-Object System.Windows.Forms.ProgressBar
+    $progressBar.Location = New-Object System.Drawing.Point(530, 14)
+    $progressBar.Size = New-Object System.Drawing.Size(240, 22)
+    $progressBar.Minimum = 0
+    $progressBar.Maximum = 100
+    $progressBar.Value = 0
+    $panelButtons.Controls.Add($progressBar)
+
+    $lblStatus = New-Object System.Windows.Forms.Label
+    $lblStatus.Text = "Pronto"
+    $lblStatus.Location = New-Object System.Drawing.Point(780, 16)
+    $lblStatus.Size = New-Object System.Drawing.Size(100, 20)
+    $lblStatus.ForeColor = [System.Drawing.Color]::FromArgb(180, 180, 200)
+    $panelButtons.Controls.Add($lblStatus)
+
+    # ---- RIGA 4: RISULTATI ----
     $dgvResults = New-Object System.Windows.Forms.DataGridView
     $dgvResults.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $dgvResults.BackgroundColor = [System.Drawing.Color]::FromArgb(14, 14, 18)
+    $dgvResults.BackgroundColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
     $dgvResults.BorderStyle = [System.Windows.Forms.BorderStyle]::None
     $dgvResults.AllowUserToAddRows = $false
     $dgvResults.AllowUserToDeleteRows = $false
     $dgvResults.ReadOnly = $true
-    $dgvResults.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
     $dgvResults.RowHeadersVisible = $false
     $dgvResults.SelectionMode = [System.Windows.Forms.DataGridViewSelectionMode]::FullRowSelect
-    $dgvResults.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 24)
-    $dgvResults.DefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(200, 200, 210)
-    $dgvResults.DefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 10)
-    $dgvResults.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(28, 28, 34)
-    $dgvResults.ColumnHeadersDefaultCellStyle.ForeColor = [System.Drawing.Color]::FromArgb(166, 173, 200)
-    $dgvResults.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    $dgvResults.GridColor = [System.Drawing.Color]::FromArgb(50, 50, 58)
+    $dgvResults.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
+    $dgvResults.DefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
+    $dgvResults.DefaultCellStyle.ForeColor = [System.Drawing.Color]::White
+    $dgvResults.DefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $dgvResults.ColumnHeadersDefaultCellStyle.BackColor = [System.Drawing.Color]::FromArgb(40, 40, 50)
+    $dgvResults.ColumnHeadersDefaultCellStyle.ForeColor = [System.Drawing.Color]::White
+    $dgvResults.ColumnHeadersDefaultCellStyle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $dgvResults.GridColor = [System.Drawing.Color]::FromArgb(50, 50, 60)
     
-	$colName = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-	$colName.Name = "Nome"; $colName.HeaderText = "Nome"; $colName.FillWeight = 30
-	$dgvResults.Columns.Add($colName)
+    # Colonne
+    $dgvResults.Columns.Add("Nome", "Nome")
+    $dgvResults.Columns.Add("Percorso", "Percorso")
+    $dgvResults.Columns.Add("Dimensione", "Dimensione")
+    $dgvResults.Columns.Add("Modificato", "Modificato")
+    $dgvResults.Columns[0].FillWeight = 25
+    $dgvResults.Columns[1].FillWeight = 50
+    $dgvResults.Columns[2].FillWeight = 12
+    $dgvResults.Columns[3].FillWeight = 13
+    
+    $table.Controls.Add($dgvResults, 0, 3)
 
-	$colPath = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-	$colPath.Name = "Percorso"; $colPath.HeaderText = "Percorso"; $colPath.FillWeight = 50
-	$dgvResults.Columns.Add($colPath)
+    # ---- RIGA 5: STATUS BAR INFERIORE ----
+    $panelBottom = New-Object System.Windows.Forms.Panel
+    $panelBottom.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $panelBottom.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 30)
+    $panelBottom.Padding = New-Object System.Windows.Forms.Padding(10, 0, 10, 0)
+    $table.Controls.Add($panelBottom, 0, 4)
 
-	$colSize = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-	$colSize.Name = "Dimensione"; $colSize.HeaderText = "Dimensione"; $colSize.FillWeight = 10
-	$dgvResults.Columns.Add($colSize)
+    $lblInfo = New-Object System.Windows.Forms.Label
+    $lblInfo.Text = "💡 Doppio click su un file per aprirlo"
+    $lblInfo.Location = New-Object System.Drawing.Point(10, 4)
+    $lblInfo.Size = New-Object System.Drawing.Size(400, 20)
+    $lblInfo.Font = New-Object System.Drawing.Font("Segoe UI", 8)
+    $lblInfo.ForeColor = [System.Drawing.Color]::FromArgb(150, 150, 170)
+    $panelBottom.Controls.Add($lblInfo)
 
-	$colDate = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-	$colDate.Name = "Modificato"; $colDate.HeaderText = "Modificato"; $colDate.FillWeight = 10
-	$dgvResults.Columns.Add($colDate)
-    $resultPanel.Controls.Add($dgvResults)
-    
-    # Barra inferiore
-    $bottomPanel = New-Object System.Windows.Forms.Panel
-    $bottomPanel.Dock = [System.Windows.Forms.DockStyle]::Bottom
-    $bottomPanel.Height = 40
-    $bottomPanel.BackColor = [System.Drawing.Color]::FromArgb(28, 28, 34)
-    $resultPanel.Controls.Add($bottomPanel)
-    
-    $lblStatus = New-Object System.Windows.Forms.Label
-    $lblStatus.Text = "Pronto"
-    $lblStatus.Location = New-Object System.Drawing.Point(10, 10)
-    $lblStatus.AutoSize = $true
-    $lblStatus.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $lblStatus.ForeColor = [System.Drawing.Color]::FromArgb(166, 173, 200)
-    $bottomPanel.Controls.Add($lblStatus)
-    
-    $btnOpenFolder = New-Object System.Windows.Forms.Button
-    $btnOpenFolder.Text = "📂 Apri Cartella"
-    $btnOpenFolder.Location = New-Object System.Drawing.Point(650, 5)
-    $btnOpenFolder.Size = New-Object System.Drawing.Size(110, 30)
-    $btnOpenFolder.BackColor = [System.Drawing.Color]::FromArgb(49, 50, 68)
-    $btnOpenFolder.ForeColor = [System.Drawing.Color]::FromArgb(230, 230, 235)
-    $btnOpenFolder.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $btnOpenFolder.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $btnOpenFolder.Cursor = [System.Windows.Forms.Cursors]::Hand
-    $btnOpenFolder.Add_Click({
-        if ($dgvResults.SelectedRows.Count -gt 0) {
-            $path = $dgvResults.SelectedRows[0].Cells["Percorso"].Value
-            if ($path -and (Test-Path $path)) {
-                Start-Process "explorer.exe" -ArgumentList "/select,`"$path`""
-            }
-        }
-    })
-    $bottomPanel.Controls.Add($btnOpenFolder)
-    
-    $btnCopyPath = New-Object System.Windows.Forms.Button
-    $btnCopyPath.Text = "📋 Copia Percorso"
-    $btnCopyPath.Location = New-Object System.Drawing.Point(770, 5)
-    $btnCopyPath.Size = New-Object System.Drawing.Size(110, 30)
-    $btnCopyPath.BackColor = [System.Drawing.Color]::FromArgb(49, 50, 68)
-    $btnCopyPath.ForeColor = [System.Drawing.Color]::FromArgb(230, 230, 235)
-    $btnCopyPath.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $btnCopyPath.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $btnCopyPath.Cursor = [System.Windows.Forms.Cursors]::Hand
-    $btnCopyPath.Add_Click({
-        if ($dgvResults.SelectedRows.Count -gt 0) {
-            $path = $dgvResults.SelectedRows[0].Cells["Percorso"].Value
-            if ($path) {
-                [System.Windows.Forms.Clipboard]::SetText($path)
-                $lblStatus.Text = "✅ Percorso copiato!"
-            }
-        }
-    })
-    $bottomPanel.Controls.Add($btnCopyPath)
-    
-    # Funzioni di ricerca
-    function Update-Results($results, $statusMsg) {
+    $lblCacheStatus = New-Object System.Windows.Forms.Label
+    $lblCacheStatus.Text = ""
+    $lblCacheStatus.Location = New-Object System.Drawing.Point(700, 4)
+    $lblCacheStatus.Size = New-Object System.Drawing.Size(180, 20)
+    $lblCacheStatus.Font = New-Object System.Drawing.Font("Segoe UI", 8)
+    $lblCacheStatus.ForeColor = [System.Drawing.Color]::FromArgb(150, 150, 170)
+    $lblCacheStatus.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
+    $panelBottom.Controls.Add($lblCacheStatus)
+
+    # ============================================================
+    # FUNZIONI UI
+    # ============================================================
+
+    function Update-Results {
+        param($results, $status, $fromCache = $false)
         $dgvResults.Rows.Clear()
-        foreach ($item in $results) {
-            $sizeStr = if ($item.Size -gt 1GB) { "$([Math]::Round($item.Size/1GB, 2)) GB" } 
-                       elseif ($item.Size -gt 1MB) { "$([Math]::Round($item.Size/1MB, 2)) MB" }
-                       else { "$([Math]::Round($item.Size/1KB, 2)) KB" }
-            $dgvResults.Rows.Add($item.Name, $item.Path, $sizeStr, $item.Modified)
+        if ($results -and $results.Count -gt 0) {
+            foreach ($item in $results) {
+                $sizeStr = if ($item.Dimensione -gt 1GB) { "{0:N2} GB" -f ($item.Dimensione / 1GB) }
+                           elseif ($item.Dimensione -gt 1MB) { "{0:N2} MB" -f ($item.Dimensione / 1MB) }
+                           else { "{0:N0} KB" -f ($item.Dimensione / 1KB) }
+                $dgvResults.Rows.Add($item.Nome, $item.Percorso, $sizeStr, $item.Modificato)
+            }
+            $lblStatus.Text = "$status - Trovati $($dgvResults.Rows.Count)"
+        } else {
+            $lblStatus.Text = "$status - Nessun risultato"
         }
-        $lblStatus.Text = "$statusMsg - Trovati $($dgvResults.Rows.Count) risultati"
+        if ($fromCache) {
+            $lblCacheStatus.Text = "📦 Da cache"
+            $lblCacheStatus.ForeColor = [System.Drawing.Color]::FromArgb(255, 200, 100)
+        } else {
+            $lblCacheStatus.Text = "🔍 Ricerca live"
+            $lblCacheStatus.ForeColor = [System.Drawing.Color]::FromArgb(100, 200, 255)
+        }
         $dgvResults.ClearSelection()
+        $progressBar.Value = 100
+        $btnSearch.Enabled = $true
+        $btnDuplicates.Enabled = $true
+        $btnLarge.Enabled = $true
+        $btnCancel.Enabled = $false
     }
-    
-    $btnSearch.Add_Click({
-        $lblStatus.Text = "⏳ Ricerca in corso..."
-        [System.Windows.Forms.Application]::DoEvents()
-        
-        $results = Search-Files -Path $txtPath.Text -Pattern $txtPattern.Text -Content $txtContent.Text -MaxResults ([int]$numMax.Value) -Recurse:$chkRecurse.Checked
-        Update-Results $results "✅ Ricerca completata"
+
+    # ---- DOPPIO CLICK PER APRIRE ----
+    $dgvResults.Add_CellDoubleClick({
+        if ($dgvResults.SelectedRows.Count -eq 0) { return }
+        $row = $dgvResults.SelectedRows[0]
+        $path = $row.Cells["Percorso"].Value
+        if (-not $path) { return }
+        try {
+            if (Test-Path -Path $path) {
+                Start-Process -FilePath $path
+                $lblStatus.Text = "📄 Aperto: $(Split-Path $path -Leaf)"
+            } else {
+                $lblStatus.Text = "⚠️ Percorso non trovato: $path"
+            }
+        } catch {
+            $lblStatus.Text = "❌ Errore: $($_.Exception.Message)"
+        }
     })
-    
-    $btnDuplicates.Add_Click({
-        $lblStatus.Text = "⏳ Ricerca duplicati in corso..."
-        [System.Windows.Forms.Application]::DoEvents()
+
+    # ============================================================
+    # AVVIO RICERCA IN BACKGROUND
+    # ============================================================
+
+    function Start-BackgroundSearch {
+        param($SearchType)
         
-        $duplicates = Search-Duplicates -Path $txtPath.Text -Recurse:$chkRecurse.Checked -MaxResults ([int]$numMax.Value)
-        $results = @()
-        foreach ($group in $duplicates) {
-            foreach ($file in $group) {
-                $info = Get-Item $file -ErrorAction SilentlyContinue
-                if ($info) {
-                    $results += [PSCustomObject]@{
-                        Name = $info.Name
-                        Path = $file
-                        Size = $info.Length
-                        Modified = $info.LastWriteTime
-                    }
-                }
+        if ($script:IsSearching) { return }
+        
+        $path = $txtPath.Text
+        $recurse = $chkRecurse.Checked
+        $pattern = $txtPattern.Text
+        $content = $txtContent.Text
+        $minSizeMB = 100
+        
+        # Controlla cache
+        $cacheKey = Get-SearchKey -SearchType $SearchType -Path $path -Pattern $pattern -Content $content -Recurse $recurse -MinSizeMB $minSizeMB
+        $cache = Get-SearchCache
+        
+        # Usa Hashtable per la cache
+        if ($cache -is [hashtable] -and $cache.ContainsKey($cacheKey)) {
+            $cachedItem = $cache[$cacheKey]
+            $cachedTime = [datetime]$cachedItem.Timestamp
+            $age = (Get-Date) - $cachedTime
+            
+            if ($age.TotalHours -lt 24) {
+                Write-SearchLog "USO CACHE $SearchType su $path ($($cachedItem.Results.Count) risultati, $([math]::Round($age.TotalHours,1)) ore)"
+                $lblStatus.Text = "📦 Cache ($([math]::Round($age.TotalHours,1)) ore)"
+                Update-Results -results $cachedItem.Results -status "✅ Da cache" -fromCache $true
+                return
             }
         }
-        Update-Results $results "🔁 Duplicati trovati"
-    })
-    
-    $btnLarge.Add_Click({
-        $lblStatus.Text = "⏳ Ricerca file grandi in corso..."
-        [System.Windows.Forms.Application]::DoEvents()
         
-        $results = Search-LargeFiles -Path $txtPath.Text -MinSizeMB 100 -MaxResults ([int]$numMax.Value) -Recurse:$chkRecurse.Checked
-        Update-Results $results "📦 File grandi trovati"
+        # Avvia ricerca
+        $script:IsSearching = $true
+        $btnSearch.Enabled = $false
+        $btnDuplicates.Enabled = $false
+        $btnLarge.Enabled = $false
+        $btnCancel.Enabled = $true
+        $progressBar.Value = 0
+        $lblStatus.Text = "Ricerca in corso..."
+        $lblCacheStatus.Text = "🔍 Ricerca live"
+        $lblCacheStatus.ForeColor = [System.Drawing.Color]::FromArgb(100, 200, 255)
+        $dgvResults.Rows.Clear()
+        
+        # ScriptBlock per il Job (self-contained)
+        $scriptBlock = {
+            param($Type, $Path, $Pattern, $Content, $Recurse, $MinSizeMB)
+            
+            # Funzioni di ricerca (inline)
+            function Search-Files {
+                param($Path, $Pattern, $Content, $Recurse, $MaxResults = 500)
+                $results = [System.Collections.Generic.List[PSCustomObject]]::new()
+                $getParams = @{ Path = $Path; Filter = $Pattern; File = $true; ErrorAction = 'SilentlyContinue' }
+                if ($Recurse) { $getParams.Recurse = $true }
+                $files = Get-ChildItem @getParams
+                foreach ($file in $files) {
+                    if ($Content -and $Content -ne "") {
+                        try {
+                            if (Select-String -Path $file.FullName -Pattern $Content -Quiet -ErrorAction SilentlyContinue) {
+                                $results.Add([PSCustomObject]@{ Nome = $file.Name; Percorso = $file.FullName; Dimensione = $file.Length; Modificato = $file.LastWriteTime })
+                            }
+                        } catch {}
+                    } else {
+                        $results.Add([PSCustomObject]@{ Nome = $file.Name; Percorso = $file.FullName; Dimensione = $file.Length; Modificato = $file.LastWriteTime })
+                    }
+                    if ($results.Count -ge $MaxResults) { break }
+                }
+                return $results
+            }
+            
+            function Search-Duplicates {
+                param($Path, $Recurse, $MaxResults = 100)
+                $results = @()
+                $getParams = @{ Path = $Path; File = $true; ErrorAction = 'SilentlyContinue' }
+                if ($Recurse) { $getParams.Recurse = $true }
+                $files = Get-ChildItem @getParams
+                $groups = @{}
+                foreach ($file in $files) {
+                    try {
+                        $hash = Get-FileHash -Path $file.FullName -Algorithm MD5 -ErrorAction SilentlyContinue
+                        if ($hash) {
+                            $key = "$($file.Length)_$($hash.Hash)"
+                            if (-not $groups.ContainsKey($key)) { $groups[$key] = @() }
+                            $groups[$key] += $file.FullName
+                        }
+                    } catch {}
+                }
+                foreach ($group in $groups.Values | Where-Object { $_.Count -gt 1 }) {
+                    $results += ,$group
+                    if ($results.Count -ge $MaxResults) { break }
+                }
+                return $results
+            }
+            
+            function Search-Large {
+                param($Path, $Recurse, $MinSizeMB, $MaxResults = 50)
+                $results = [System.Collections.Generic.List[PSCustomObject]]::new()
+                $minBytes = $MinSizeMB * 1MB
+                $getParams = @{ Path = $Path; File = $true; ErrorAction = 'SilentlyContinue' }
+                if ($Recurse) { $getParams.Recurse = $true }
+                $files = Get-ChildItem @getParams | Where-Object { $_.Length -gt $minBytes } | Sort-Object Length -Descending
+                foreach ($file in $files) {
+                    $results.Add([PSCustomObject]@{ Nome = $file.Name; Percorso = $file.FullName; Dimensione = $file.Length; Modificato = $file.LastWriteTime })
+                    if ($results.Count -ge $MaxResults) { break }
+                }
+                return $results
+            }
+            
+            # Esegui la ricerca richiesta
+            switch ($Type) {
+                "Files" { return Search-Files -Path $Path -Pattern $Pattern -Content $Content -Recurse $Recurse }
+                "Duplicates" { return Search-Duplicates -Path $Path -Recurse $Recurse }
+                "Large" { return Search-Large -Path $Path -Recurse $Recurse -MinSizeMB $MinSizeMB }
+            }
+        }
+        
+        # SALVA IL TEMPO DI INIZIO NELLO SCRIPT SCOPE
+        $script:StartTime = Get-Date
+        
+        $script:Job = Start-Job -ScriptBlock $scriptBlock -ArgumentList $SearchType, $path, $pattern, $content, $recurse, $minSizeMB
+        
+        # Timer per controllare il job
+        $script:Timer = New-Object System.Windows.Forms.Timer
+        $script:Timer.Interval = 300
+        $script:Timer.Add_Tick({
+            $job = $script:Job
+            if ($job -eq $null) { $this.Stop(); return }
+            
+            if ($job.State -eq 'Running') {
+                $val = ($progressBar.Value + 3) % 90
+                if ($val -lt 10) { $val = 10 }
+                $progressBar.Value = $val
+                $lblStatus.Text = "Ricerca in corso... ($val%)"
+            } elseif ($job.State -eq 'Completed') {
+                $this.Stop()
+                $results = Receive-Job -Job $job
+                Remove-Job -Job $job
+                $script:Job = $null
+                $script:IsSearching = $false
+                
+                # USO $script:StartTime (ora disponibile)
+                $endTime = Get-Date
+                if ($script:StartTime) {
+                    $duration = (New-TimeSpan -Start $script:StartTime -End $endTime).TotalSeconds
+                } else {
+                    $duration = 0
+                }
+                $script:StartTime = $null
+                
+                # Salva in cache
+                if ($results -and $results.Count -gt 0) {
+                    try {
+                        $cache = Get-SearchCache
+                        if ($cache -isnot [hashtable]) { $cache = @{} }
+                        $cacheKey = Get-SearchKey -SearchType $SearchType -Path $path -Pattern $pattern -Content $content -Recurse $recurse -MinSizeMB $minSizeMB
+                        $cache[$cacheKey] = @{
+                            Timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+                            Type = $SearchType
+                            Path = $path
+                            Pattern = $pattern
+                            Content = $content
+                            Recurse = $recurse
+                            Results = $results
+                            Count = $results.Count
+                        }
+                        Save-SearchCache -Cache $cache
+                        Write-SearchLog "RICERCA $SearchType su $path - $($results.Count) risultati in $([math]::Round($duration,2)) sec - SALVATO IN CACHE"
+                    } catch {
+                        Write-SearchLog "ERRORE salvataggio cache: $($_.Exception.Message)"
+                    }
+                } else {
+                    Write-SearchLog "RICERCA $SearchType su $path - 0 risultati in $([math]::Round($duration,2)) sec"
+                }
+                
+                Update-Results -results $results -status "✅ Completato" -fromCache $false
+            } elseif ($job.State -eq 'Failed' -or $job.State -eq 'Stopped') {
+                $this.Stop()
+                Remove-Job -Job $job -Force
+                $script:Job = $null
+                $script:IsSearching = $false
+                $script:StartTime = $null
+                $lblStatus.Text = "❌ Errore o annullato"
+                $progressBar.Value = 0
+                $lblCacheStatus.Text = ""
+                $btnSearch.Enabled = $true
+                $btnDuplicates.Enabled = $true
+                $btnLarge.Enabled = $true
+                $btnCancel.Enabled = $false
+            }
+        })
+        $script:Timer.Start()
+    }
+
+    # ============================================================
+    # EVENTI PULSANTI
+    # ============================================================
+
+    $btnSearch.Add_Click({ Start-BackgroundSearch -SearchType "Files" })
+    $btnDuplicates.Add_Click({ Start-BackgroundSearch -SearchType "Duplicates" })
+    $btnLarge.Add_Click({ Start-BackgroundSearch -SearchType "Large" })
+
+    $btnCancel.Add_Click({
+        if ($script:Job) {
+            # Stop-Job NON ha -Force
+            Stop-Job -Job $script:Job
+            Remove-Job -Job $script:Job -Force
+            $script:Job = $null
+            $script:IsSearching = $false
+            $script:StartTime = $null
+            $lblStatus.Text = "⛔ Annullato"
+            $progressBar.Value = 0
+            $lblCacheStatus.Text = ""
+            $btnSearch.Enabled = $true
+            $btnDuplicates.Enabled = $true
+            $btnLarge.Enabled = $true
+            $btnCancel.Enabled = $false
+            Write-SearchLog "RICERCA ANNULLATA"
+        }
     })
-    
+
+    # ---- SCORCIATOIE ----
     $form.Add_KeyDown({
-        if ($_.KeyCode -eq [System.Windows.Forms.Keys]::Escape) {
-            $form.Close()
-        }
+        if ($_.KeyCode -eq [System.Windows.Forms.Keys]::Escape) { $form.Close() }
         if ($_.Control -and $_.KeyCode -eq [System.Windows.Forms.Keys]::F) {
-            $txtPattern.Focus()
-            $txtPattern.SelectAll()
+            $txtPattern.Focus(); $txtPattern.SelectAll()
         }
     })
-    
-    $form.Add_Shown({
-        $txtPattern.Focus()
-        $txtPattern.SelectAll()
-    })
-    
-    $form.ShowDialog()
-    $form.Dispose()
+
+    # ---- MOSTRA ----
+    $form.ShowDialog() | Out-Null
 }
 
 # ============================================================
-# FINE DEL MODULO - Le funzioni sono disponibili tramite dot-sourcing
+# FINE MODULO
 # ============================================================
