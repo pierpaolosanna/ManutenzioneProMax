@@ -321,7 +321,7 @@ function Do-ScriptUpdate {
                 Log "[OK] Backup creato: $backupPath"
 
                 Log "[DL] Download nuovo script..."
-                Invoke-WebRequest -Uri $remoteScriptUrl -OutFile $localScriptPath -UseBasicParsing -ErrorAction Stop
+                Invoke-WebRequest -Uri $remoteScriptUrl -OutFile $localScriptPath -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
                 Log "[OK] Download completato."
 
                 Log "[i] Riavvio dello script aggiornato..."
