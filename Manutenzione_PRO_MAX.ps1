@@ -82,7 +82,7 @@ $fgDim = [System.Drawing.Color]::FromArgb(120, 120, 130)
 $sectionColor = [System.Drawing.Color]::FromArgb(50, 220, 1)
 $accentColor = [System.Drawing.Color]::FromArgb(56, 132, 244)
 $warningColor = [System.Drawing.Color]::FromArgb(240, 180, 40)
-$successColor = [System.Drawing.Color]::FromArgb(60, 2, 120)
+$successColor = [System.Drawing.Color]::FromArgb(50, 220, 1)
 $exitColor = [System.Drawing.Color]::FromArgb(220, 60, 60)
 $restartColor = [System.Drawing.Color]::FromArgb(230, 120, 30)
 $infoColor = [System.Drawing.Color]::FromArgb(40, 170, 220)
@@ -163,10 +163,19 @@ function Get-PercentFromLine($line) {
 }
 
 function Set-StepProgress($stepPercent, $stepStart, $stepEnd) {
-    $p = [Math]::Max(0, [Math]::Min($stepPercent, 0))
-    $start = [Math]::Max(0, [Math]::Min($stepStart, 0))
-    $end = [Math]::Max(0, [Math]::Min($stepEnd, 0))
-    $overall = [Math]::Round($start + (($end - $start) * ($p / 0.0)))
+    # Prevenzione NaN
+    if ([double]::IsNaN($stepPercent)) { $stepPercent = 0 }
+    if ([double]::IsNaN($stepStart)) { $stepStart = 0 }
+    if ([double]::IsNaN($stepEnd)) { $stepEnd = 0 }
+
+    # Corretto il limite massimo da 0 a 100
+    $p = [Math]::Max(0, [Math]::Min($stepPercent, 100))
+    $start = [Math]::Max(0, [Math]::Min($stepStart, 100))
+    $end = [Math]::Max(0, [Math]::Min($stepEnd, 100))
+    
+    # Corretto il divisore da 0.0 a 100.0 per calcolare la percentuale corretta
+    $overall = [Math]::Round($start + (($end - $start) * ($p / 100.0)))
+    
     Update-Progress $overall
     if ($script:progressLabel) { $script:progressLabel.Text = "$p%" }
 }
@@ -223,7 +232,12 @@ function Log-Output($output, [int]$stepStart = -1, [int]$stepEnd = -1) {
 
 function Update-Progress($value) {
     if ($script:progressBar -and -not $script:isClosing) {
-        $v = [Math]::Max(0, [Math]::Min($value, 0))
+        # Se il valore è NaN, vuoto o nullo, lo forziamo a 0 per evitare il crash
+        if ([double]::IsNaN($value) -or [string]::IsNullOrWhiteSpace($value) -or $null -eq $value) {
+            $value = 0
+        }
+        # Corretto il limite massimo da 0 a 100
+        $v = [Math]::Max(0, [Math]::Min($value, 100))
         $script:progressBar.Value = $v
         if ($script:progressLabel) { $script:progressLabel.Text = "$v%" }
     }
@@ -1375,7 +1389,60 @@ function Do-SpeedInternet { if($script:isClosing -or(Test-Cancel)){return};Updat
 # BLOCCO 7 - FUNZIONI DI RIPARAZIONE
 # ============================================================
 function Do-RepairSystem { if($script:isClosing -or(Test-Cancel)){return};if(-not $isAdmin){Log "[X] Admin.";Update-Status "[!] Admin" $warningColor;Flush-LogBuffer;Update-Progress 100;return};Update-Status "[...] SFC..." $repairColor;Flush-LogBuffer;Pump-UI;Run-ProcessRealtime "sfc" "/scannow" "SFC" 20 50;if(Test-Cancel){return};Update-Status "[...] DISM..." $repairColor;Flush-LogBuffer;Pump-UI;Run-ProcessRealtime "DISM" "/Online /Cleanup-Image /RestoreHealth" "DISM" 50 85;Update-Progress 100;Update-Status "[OK] Riparazione" $successColor;Flush-LogBuffer;Pump-UI }
-function Do-RestorePoint { if($script:isClosing -or(Test-Cancel)){return};if(-not $isAdmin){Log "[X] Admin.";Update-Status "[!] Admin" $warningColor;Flush-LogBuffer;Update-Progress 100;return};Update-Status "[...] Ripristino..." $repairColor;Flush-LogBuffer;Pump-UI;Log "";Log "===============================================================================================";Log "[>] Punto Ripristino";Log "===============================================================================================";try{Enable-ComputerRestore -Drive "$env:SystemDrive\" -ErrorAction SilentlyContinue;Pump-UI;Checkpoint-Computer -Description "PRO MAX $(Get-Date -Format 'dd/MM HH:mm')" -RestorePointType MODIFY_SETTINGS -ErrorAction Stop;Log "[OK] Creato."}catch{if($_.Exception.Message -match "frequenza|frequency|1410"){Log "[!] Limite 24h."}else{Log "[X] $($_.Exception.Message)"}};Log "===============================================================================================";Log "";Update-Progress 100;Update-Status "[OK] Ripristino" $successColor;Flush-LogBuffer;Pump-UI }
+function Do-RestorePoint { 
+    if($script:isClosing -or (Test-Cancel)) { return }
+    if(-not $isAdmin) { 
+        Log "[X] Admin richiesto."
+        Update-Status "[!] Admin" $warningColor
+        Flush-LogBuffer
+        Update-Progress 100
+        return 
+    }
+    
+    Update-Status "[...] Creazione Punto di Ripristino..." $repairColor
+    Flush-LogBuffer; Pump-UI
+    Log ""
+    Log "==============================================================================================="
+    Log "[>] Punto Ripristino"
+    Log "==============================================================================================="
+    
+    $regPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore"
+    $regName = "SystemRestorePointCreationFrequency"
+    $originalValue = $null
+
+    try {
+        Enable-ComputerRestore -Drive "$env:SystemDrive\" -ErrorAction SilentlyContinue
+        Pump-UI
+        
+        # 1. Bypass limite temporale di 24 ore di Windows
+        if (Test-Path $regPath) {
+            $originalValue = (Get-ItemProperty -Path $regPath -Name $regName -ErrorAction SilentlyContinue).$regName
+            Set-ItemProperty -Path $regPath -Name $regName -Value 0 -Type DWord -ErrorAction Stop
+        }
+
+        # 2. Crea il punto di ripristino
+        Checkpoint-Computer -Description "PRO MAX $(Get-Date -Format 'dd/MM HH:mm')" -RestorePointType MODIFY_SETTINGS -ErrorAction Stop
+        Log "[OK] Punto di ripristino creato con successo."
+        
+    } catch {
+        Log "[X] Errore durante la creazione: $($_.Exception.Message)"
+    } finally {
+        # 3. Ripristina sempre il valore originale di sicurezza nel registro
+        try {
+            if ($null -ne $originalValue) {
+                Set-ItemProperty -Path $regPath -Name $regName -Value $originalValue -Type DWord -ErrorAction SilentlyContinue
+            } else {
+                Set-ItemProperty -Path $regPath -Name $regName -Value 1440 -Type DWord -ErrorAction SilentlyContinue
+            }
+        } catch {}
+    }
+
+    Log "==============================================================================================="
+    Log ""
+    Update-Progress 100
+    Update-Status "[OK] Ripristino" $successColor
+    Flush-LogBuffer; Pump-UI
+}
 
 # ============================================================
 # BLOCCO 8 - FUNZIONI DI SICUREZZA
