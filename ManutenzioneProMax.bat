@@ -16,7 +16,7 @@ cls
 echo.
 echo ============================================================
 echo.
-echo              MANUTENZIONE PRO MAX v3.0
+echo              MANUTENZIONE PRO MAX Peters
 echo.
 echo ============================================================
 echo.
@@ -152,7 +152,7 @@ echo.
 echo ============================================================
 echo.
 echo          VERIFICA POST-INSTALLAZIONE
-echo              Manutenzione PRO MAX v3.0
+echo              Manutenzione PRO MAX
 echo.
 echo ============================================================
 echo.
