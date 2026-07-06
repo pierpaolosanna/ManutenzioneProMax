@@ -17,11 +17,11 @@ function Initialize-AIChatState {
     
     $Global:AIChatState = [PSCustomObject]@{
         PromptFolder = [System.IO.Path]::Combine($scriptPath, "Prompt")
-        GeminiApiKey = "AQ.Ab8RN6JxWfE8582tR8IoEI2sjEkQZzloy6GhqxJglSi7EMD3VA"
-        GroqApiKey = "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"
-        CloudflareAccount = "4eb2a33f25a0bb6fa5b5308fead39fbc"
-        CloudflareToken = "cfut_6RPuzHCo9V8fas1gGZAXEJP9480p2knBosfGxul3b3ede706"
-        BynaraApiKey = "sk-nry-dw-_WrZpJ0O01c1fDIDayAyhMQFakSEv4z8Wp0s7UfE"
+        GeminiApiKey = "AQ.Ab8RN6JxWfE8582tR8IoEI2sjEkQZzloyxxxxxxxxxxx"
+        GroqApiKey = "gsk_MqfKP1gSNV4VUsEIVMDPWGdyb3FYSFoleCg2Dyxxxxxxxx"
+        CloudflareAccount = "4eb2a33f25a0bb6fa5b5308fexxxxxx"
+        CloudflareToken = "cfut_6RPuzHCo9V8fas1gGZAXEJP9480p2knBosfGxxxxxx"
+        BynaraApiKey = "sk-nry-dw-_WrZpJ0O01c1fDIDayAyhMQFakSEv4z8Wp0xxxxx"
         
         Models = @{
             "Gemini" = @("gemini-2.5-flash", "gemini-2.0-flash")
