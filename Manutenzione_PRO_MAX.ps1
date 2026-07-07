@@ -347,45 +347,85 @@ function Do-ScriptUpdate {
     Flush-LogBuffer;Pump-UI
 }
 
+function Invoke-GitHubDownloadRecursive {
+    param(
+        [string]$ApiUrl,
+        [string]$LocalPath,
+        [string]$BasePath = ""
+    )
+
+    $items = Invoke-RestMethod -Uri $ApiUrl -Method Get -UseBasicParsing -TimeoutSec 15
+    foreach ($item in $items) {
+        if ($item.type -eq "dir") {
+            # Escludi cartelle indesiderate
+            if ($item.name -in @("Prompt", "Docs")) { continue }
+            # Crea la cartella locale
+            $newLocalPath = Join-Path $LocalPath $item.name
+            New-Item -ItemType Directory -Force -Path $newLocalPath | Out-Null
+            # Ricorsione
+            Invoke-GitHubDownloadRecursive -ApiUrl $item.url -LocalPath $newLocalPath -BasePath "$BasePath/$($item.name)"
+        } elseif ($item.type -eq "file") {
+            # Scarica il file
+            $localFile = Join-Path $LocalPath $item.name
+            try {
+                Log "[DL] Download: $BasePath/$($item.name)..."
+                Invoke-WebRequest -Uri $item.download_url -OutFile $localFile -UseBasicParsing -ErrorAction Stop
+                Log "[OK] Scaricato: $BasePath/$($item.name)"
+            } catch {
+                Log "[X] Errore download $BasePath/$($item.name): $($_.Exception.Message)"
+            }
+        }
+    }
+}
+
+
 function Do-FullUpdate {
-    if($script:isClosing -or (Test-Cancel)){return}
+    param([switch]$Force)
     
-    Log "";Log "==============================================================================================="
-    Log "[>] FULL UPDATE - AGGIORNAMENTO COMPLETO"
+    if ($script:isClosing -or (Test-Cancel)) { return }
+    
+    Log ""; Log "==============================================================================================="
+    if ($Force) { Log "[>] FULL UPDATE FORZATO" } else { Log "[>] FULL UPDATE - AGGIORNAMENTO COMPLETO" }
     Log "==============================================================================================="
     Update-Status "[...] Verifica aggiornamento completo..." $infoColor
-    Flush-LogBuffer;Pump-UI
+    Flush-LogBuffer; Pump-UI
 
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        
-        # --- 1. Leggi versione remota ---
-        $remoteVersionUrl = $script:githubRawUrl + $script:versionFileName
-        $remoteVersion = (Invoke-WebRequest -Uri $remoteVersionUrl -UseBasicParsing -TimeoutSec 10).Content.Trim()
-        
-        Log "[OK] Versione locale: $($script:currentVersion)"
-        Log "[OK] Versione remota: $remoteVersion"
 
-        if ($remoteVersion -eq $script:currentVersion) {
-            Log "[OK] Tutti i file sono già aggiornati."
-            Update-Status "[OK] Già aggiornato" $successColor
-            Update-Progress 100
-            Flush-LogBuffer;Pump-UI
-            return
+        # --- Solo se NON è forzato, controlla la versione ---
+        if (-not $Force) {
+            $remoteVersionUrl = $script:githubRawUrl + $script:versionFileName
+            $remoteVersion = (Invoke-WebRequest -Uri $remoteVersionUrl -UseBasicParsing -TimeoutSec 10).Content.Trim()
+            Log "[OK] Versione locale: $($script:currentVersion)"
+            Log "[OK] Versione remota: $remoteVersion"
+
+            if ($remoteVersion -eq $script:currentVersion) {
+                Log "[OK] Tutti i file sono già aggiornati."
+                Update-Status "[OK] Già aggiornato" $successColor
+                Update-Progress 100
+                Flush-LogBuffer; Pump-UI
+                return
+            }
+            Log "[!] Nuova versione completa disponibile!"
+        } else {
+            Log "[i] Modalità forzata: download di tutti i file indipendentemente dalla versione."
         }
 
-        Log "[!] Nuova versione completa disponibile!"
-        $response = [System.Windows.Forms.MessageBox]::Show(
-            "Versione $remoteVersion disponibile.`n`nQuesta operazione aggiornerà TUTTI i file nella repository.`n`nProcedere?",
-            "Full Update Disponibile",
-            "YesNo",
-            "Question"
-        )
-        if ($response -ne "Yes") { 
-            Log "[i] Full Update annullato."; Update-Progress 100; return 
+        # --- Conferma (solo se non forzato) ---
+        if (-not $Force) {
+            $response = [System.Windows.Forms.MessageBox]::Show(
+                "Versione $remoteVersion disponibile.`n`nQuesta operazione aggiornerà TUTTI i file nella repository (escluse Prompt e Docs).`n`nProcedere?",
+                "Full Update Disponibile",
+                "YesNo",
+                "Question"
+            )
+            if ($response -ne "Yes") { 
+                Log "[i] Full Update annullato."; Update-Progress 100; return 
+            }
         }
 
-        # --- 2. Determina percorso locale ---
+        # --- Determina percorso locale ---
         $localDir = Split-Path -Parent $PSCommandPath
         if (-not $localDir) { 
             Log "[X] Impossibile determinare la cartella di esecuzione."
@@ -394,134 +434,67 @@ function Do-FullUpdate {
             return
         }
 
-        # --- 3. Crea cartella backup ---
+        # --- Crea backup della cartella corrente ---
         $backupDir = Join-Path $localDir "backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
         New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
         Log "[OK] Backup creato in: $backupDir"
 
-        # --- 4. Scarica l'archivio ZIP della repository ---
-        $zipUrl = "https://github.com/$($script:repoOwner)/$($script:repoName)/archive/main.zip"
-        $zipPath = Join-Path $env:TEMP "repo_$(Get-Date -Format 'yyyyMMdd_HHmmss').zip"
-        Log "[DL] Download archivio repository..."
-        Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
-        Log "[OK] Download completato."
-
-        # --- 5. Estrai l'archivio in una cartella temporanea ---
-        $extractPath = Join-Path $env:TEMP "repo_extract_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
-        New-Item -ItemType Directory -Force -Path $extractPath | Out-Null
-        Log "[>] Estrazione archivio..."
-        Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
-        Log "[OK] Estrazione completata."
-
-        # --- 6. Copia i file (escluse cartelle Prompt e Docs) nella directory locale ---
-        $repoRoot = Join-Path $extractPath "$($script:repoName)-main"
-        $excludedFolders = @("Prompt", "Docs")
-        
-        # Ottieni tutti i file (ricorsivamente) dalla root della repository estratta
-        $allFiles = Get-ChildItem -Path $repoRoot -Recurse -File
-        $copied = 0
-        $errors = 0
-
-        foreach ($file in $allFiles) {
-            if (Test-Cancel) { 
-                Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-                Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
-                return 
+        # --- Backup di tutti i file esistenti (esclusa la cartella di backup stessa) ---
+        Get-ChildItem -Path $localDir -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($_.FullName -match [regex]::Escape($backupDir)) { return }
+            $relativePath = $_.FullName.Substring($localDir.Length + 1)
+            $backupFile = Join-Path $backupDir $relativePath
+            if ($_.PSIsContainer) {
+                New-Item -ItemType Directory -Force -Path $backupFile -ErrorAction SilentlyContinue | Out-Null
+            } else {
+                $backupParent = Split-Path $backupFile -Parent
+                if (-not (Test-Path $backupParent)) { New-Item -ItemType Directory -Force -Path $backupParent | Out-Null }
+                Copy-Item -Path $_.FullName -Destination $backupFile -Force -ErrorAction SilentlyContinue
             }
-            
-            # Calcola il percorso relativo rispetto alla root della repo
-            $relativePath = $file.FullName.Substring($repoRoot.Length + 1)
-            
-            # Verifica se il file si trova in una cartella esclusa
-            $exclude = $false
-            foreach ($folder in $excludedFolders) {
-                if ($relativePath -match "^$folder\\|\\$folder\\") {
-                    $exclude = $true
-                    break
-                }
-            }
-            if ($exclude) { continue }
-
-            $destFile = Join-Path $localDir $relativePath
-            $destDir = Split-Path $destFile -Parent
-            
-            # Crea la directory di destinazione se non esiste
-            if (-not (Test-Path $destDir)) {
-                New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-            }
-
-            # Backup del file esistente
-            if (Test-Path $destFile) {
-                $backupFile = Join-Path $backupDir $relativePath
-                $backupFileDir = Split-Path $backupFile -Parent
-                if (-not (Test-Path $backupFileDir)) {
-                    New-Item -ItemType Directory -Force -Path $backupFileDir | Out-Null
-                }
-                Copy-Item -Path $destFile -Destination $backupFile -Force
-            }
-
-            # Copia il nuovo file
-            try {
-                Copy-Item -Path $file.FullName -Destination $destFile -Force -ErrorAction Stop
-                $copied++
-            } catch {
-                $errors++
-                Log "[X] Errore copia $relativePath : $($_.Exception.Message)"
-            }
-
-            $progress = [Math]::Round(($copied / $allFiles.Count) * 100)
-            Update-Progress $progress
-            Pump-UI
         }
+        Log "[OK] Backup di tutti i file completato."
 
-        # --- 7. Pulizia file temporanei ---
-        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-        Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+        # --- Scarica ricorsivamente TUTTI i file dalla repository (escluso Prompt e Docs) ---
+        $apiUrl = "https://api.github.com/repos/$($script:repoOwner)/$($script:repoName)/contents/"
+        Log "[>] Download ricorsivo della repository..."
+        Invoke-GitHubDownloadRecursive -ApiUrl $apiUrl -LocalPath $localDir
 
-        # --- 8. Report finale ---
+        # --- Report finale ---
         Log ""
         Log "==============================================================================================="
         Log "[OK] FULL UPDATE COMPLETATO!"
-        Log "     File copiati: $copied"
-        if($errors -gt 0) { Log "[!] Errori: $errors" }
         Log "     Backup salvato in: $backupDir"
         Log "==============================================================================================="
         
         Update-Progress 100
-        Update-Status "[OK] Full Update completato ($copied file)" $successColor
-        Flush-LogBuffer;Pump-UI
+        Update-Status "[OK] Full Update completato!" $successColor
+        Flush-LogBuffer; Pump-UI
 
-        # --- 9. Riavvio automatico con il nuovo script ---
-        if ($copied -gt 0) {
-            $response = [System.Windows.Forms.MessageBox]::Show(
-                "Aggiornamento completato!`nRiavviare lo script con la nuova versione?",
-                "Riavvio necessario",
-                "YesNo",
-                "Question"
-            )
-            if ($response -eq "Yes") {
-                $exe = if ($isPwsh7) { "pwsh.exe" } else { "powershell.exe" }
-                $localScriptPath = $PSCommandPath
-                if ($localScriptPath -and (Test-Path $localScriptPath)) {
-                    Start-Process $exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$localScriptPath`""
-                    $script:isClosing = $true
-                    $script:form.Close()
-                } else {
-                    Log "[X] Impossibile trovare lo script per il riavvio."
-                }
+        # --- Riavvio automatico ---
+        $response = [System.Windows.Forms.MessageBox]::Show(
+            "Aggiornamento completato!`nRiavviare lo script con la nuova versione?",
+            "Riavvio necessario",
+            "YesNo",
+            "Question"
+        )
+        if ($response -eq "Yes") {
+            $exe = if ($isPwsh7) { "pwsh.exe" } else { "powershell.exe" }
+            $localScriptPath = $PSCommandPath
+            if ($localScriptPath -and (Test-Path $localScriptPath)) {
+                Start-Process $exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$localScriptPath`""
+                $script:isClosing = $true
+                $script:form.Close()
             }
         }
 
     } catch {
         Log "[X] Errore Full Update: $($_.Exception.Message)"
-        if ($_.Exception.Message -match "404") {
-            Log "[!] Verifica che il repository '$($script:repoOwner)/$($script:repoName)' sia pubblico e accessibile."
-        }
         Update-Status "[X] Errore" $exitColor
         Update-Progress 100
-        Flush-LogBuffer;Pump-UI
+        Flush-LogBuffer; Pump-UI
     }
 }
+
 function Do-Winget { if($script:isClosing -or(Test-Cancel)){return};if(-not(Test-WingetAvailable)){return};Update-Progress 10;Update-Status "[...] Winget..." $fgColor;Flush-LogBuffer;Pump-UI;Run-ProcessRealtime "winget" "upgrade --all --force --accept-package-agreements --accept-source-agreements --include-unknown" "Winget Upgrade" 10 25;Set-StepProgress 100 10 25;Update-Progress 100;Update-Status "[OK] Winget" $successColor;Flush-LogBuffer;Pump-UI }
 function Do-StoreUpdate {
     if($script:isClosing -or(Test-Cancel)){return}
@@ -2147,7 +2120,7 @@ function Build-GUI {
                 @{Text="⬇️ Installa WU"; Action={Do-InstallWU}; Tooltip="Scarica e installa tutti gli aggiornamenti di Windows in sospeso"}
                 @{Text="🔧 Driver"; Action={Do-DriverUpdate}; Tooltip="Aggiorna driver via Windows Update"}
  #               @{Text="📥 Aggiorna Script"; Action={Do-ScriptUpdate}; Tooltip="Controlla e installa la nuova versione dello script da GitHub"}
-                @{Text="📦 Full Update Script"; Action={Do-FullUpdate}; Tooltip="Aggiorna TUTTI i file del repository (script, batch, README, license)"}
+				@{Text="📦 Full Update Script"; Action={Do-FullUpdate -Force}; Tooltip="Aggiorna FORZATAMENTE TUTTI i file del repository (script, batch, lib, README, license).\nIgnora il controllo versione."}
                 @{Text="▶️ UPGRADE TOTAL"; Action={Do-RunAll}; Tooltip="Esegue la sequenza completa di aggiornamento dei Programmi e di Windows"}				
             )
         }
