@@ -522,8 +522,6 @@ function Do-FullUpdate {
         Flush-LogBuffer;Pump-UI
     }
 }
-
-
 function Do-Winget { if($script:isClosing -or(Test-Cancel)){return};if(-not(Test-WingetAvailable)){return};Update-Progress 10;Update-Status "[...] Winget..." $fgColor;Flush-LogBuffer;Pump-UI;Run-ProcessRealtime "winget" "upgrade --all --force --accept-package-agreements --accept-source-agreements --include-unknown" "Winget Upgrade" 10 25;Set-StepProgress 100 10 25;Update-Progress 100;Update-Status "[OK] Winget" $successColor;Flush-LogBuffer;Pump-UI }
 function Do-StoreUpdate {
     if($script:isClosing -or(Test-Cancel)){return}
