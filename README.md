@@ -1,5 +1,8 @@
 # Manutenzione PRO MAX v3.0.4
 
+Utilizzare a proprio rischio. Nessuna garanzia espressa o implicita.
+Use at your own risk. No warranties expressed or implied.
+
 All-in-one Windows maintenance and diagnostics tool with a modern dark GUI. Portable, no installation required.
 
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1%20%7C%207.x-blue?logo=powershell)
