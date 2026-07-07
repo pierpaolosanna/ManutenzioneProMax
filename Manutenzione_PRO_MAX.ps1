@@ -1385,6 +1385,94 @@ function Do-WifiPasswords { if($script:isClosing -or(Test-Cancel)){return};Updat
 function Do-SpeedTest { if($script:isClosing -or(Test-Cancel)){return};Update-Status "[...] Ping..." $networkColor;Flush-LogBuffer;Pump-UI;Log "";Log "===============================================================================================";Log "[>] Ping Test";Log "===============================================================================================";$targets=@(@{N="Google";I="8.8.8.8"},@{N="Cloudflare";I="1.1.1.1"},@{N="OpenDNS";I="208.67.222.222"});foreach($t in $targets){if(Test-Cancel){return};try{$ping=Test-Connection -ComputerName $t.I -Count 3 -ErrorAction Stop;$prop=$script:pingProperty;$avg=[Math]::Round(($ping|Measure-Object -Property $prop -Average).Average,1);Log " $($t.N): ${avg}ms"}catch{Log " [X] $($t.N)"};Pump-UI};Log "===============================================================================================";Log "";Update-Progress 100;Update-Status "[OK] Ping" $successColor;Flush-LogBuffer;Pump-UI }
 function Do-SpeedInternet { if($script:isClosing -or(Test-Cancel)){return};Update-Status "[...] Speedtest..." $networkColor;Flush-LogBuffer;Pump-UI;Log "";Log "===============================================================================================";Log "[>] Speedtest Cloudflare";Log "===============================================================================================";[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$latency=0;try{$sw=[System.Diagnostics.Stopwatch]::StartNew();Invoke-WebRequest -Uri "https://speed.cloudflare.com/__down?bytes=0" -Method Get -TimeoutSec 5 -UseBasicParsing|Out-Null;$sw.Stop();$latency=[Math]::Round($sw.Elapsed.TotalMilliseconds,1);Log " Ping: ${latency}ms"}catch{};Flush-LogBuffer;Pump-UI;if(Test-Cancel){return};$dl=0;try{$sw=[System.Diagnostics.Stopwatch]::StartNew();$data=Invoke-WebRequest -Uri "https://speed.cloudflare.com/__down?bytes=20000000" -Method Get -TimeoutSec 30 -UseBasicParsing;$sw.Stop();$bytes=$data.RawContentLength;if($bytes -and $sw.Elapsed.TotalSeconds -gt 0){$dl=[Math]::Round((($bytes*8)/1MB)/$sw.Elapsed.TotalSeconds,2)};Log " DL: ${dl} Mbps"}catch{};Flush-LogBuffer;Pump-UI;if(Test-Cancel){return};$ul=0;try{$buf=New-Object byte[](5MB);(New-Object Random).NextBytes($buf);$sw=[System.Diagnostics.Stopwatch]::StartNew();Invoke-WebRequest -Uri "https://speed.cloudflare.com/__up" -Method Post -Body $buf -TimeoutSec 30 -UseBasicParsing|Out-Null;$sw.Stop();if($sw.Elapsed.TotalSeconds -gt 0){$ul=[Math]::Round((5*8)/$sw.Elapsed.TotalSeconds,2)};Log " UP: ${ul} Mbps"}catch{};Log "";Log " Ping ${latency}ms | DL ${dl} | UP ${ul} Mbps";Log "===============================================================================================";Log "";Update-Progress 100;Update-Status "[OK] DL $dl / UP $ul" $successColor;Flush-LogBuffer;Pump-UI }
 
+
+function Do-SpeedOokla {
+    if ($script:isClosing -or (Test-Cancel)) { return }
+
+    Update-Status "[...] Speedtest Ookla..." $networkColor
+    Flush-LogBuffer; Pump-UI
+
+    Log ""; Log "==============================================================================================="
+    Log "[>] SPEEDTEST OOKLA (dettagliato)"
+    Log "==============================================================================================="
+
+    # --- Cerca speedtest.exe in lib ---
+    $speedtestExe = Join-Path $scriptRoot "lib" "speedtest.exe"
+    if (-not (Test-Path $speedtestExe)) {
+        Log "[!] speedtest.exe non trovato in $scriptRoot\lib"
+        Log "[i] Esegui 'Full Update' per scaricare i file necessari."
+        Update-Status "[X] speedtest.exe mancante" $exitColor
+        Flush-LogBuffer; Pump-UI
+        Update-Progress 100
+        return
+    }
+
+    # --- Esegui speedtest con output JSON ---
+    try {
+        Log "[>] Avvio test (potrebbe richiedere 20-30 secondi)..."
+        Flush-LogBuffer; Pump-UI
+
+        $process = Start-Process -FilePath $speedtestExe -ArgumentList "--accept-license --format=json" -Wait -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\speedtest_output.json"
+        if ($process.ExitCode -ne 0) {
+            Log "[X] Errore nell'esecuzione di speedtest (codice: $($process.ExitCode))"
+            Update-Status "[X] Errore speedtest" $exitColor
+            Flush-LogBuffer; Pump-UI
+            Update-Progress 100
+            return
+        }
+
+        # --- Leggi e parsifica l'output JSON ---
+        $json = Get-Content "$env:TEMP\speedtest_output.json" -Raw | ConvertFrom-Json
+        if (-not $json) {
+            Log "[X] Impossibile leggere i risultati."
+            Update-Status "[X] Errore parsing" $exitColor
+            Update-Progress 100
+            return
+        }
+
+        # Estrai i dati principali
+        $downloadBps = $json.download.bandwidth
+        $uploadBps   = $json.upload.bandwidth
+        $latencyMs   = $json.ping.latency
+        $jitterMs    = $json.ping.jitter
+        $packetLoss  = $json.packetLoss * 100  # Converti in percentuale
+        $serverName  = $json.server.name
+        $serverLoc   = "$($json.server.location), $($json.server.country)"
+        $isp         = $json.isp
+
+        # Converti in Mbps (1 byte = 8 bit, 1 Mbps = 1.000.000 bit/s)
+        $downloadMbps = [Math]::Round($downloadBps * 8 / 1e6, 2)
+        $uploadMbps   = [Math]::Round($uploadBps * 8 / 1e6, 2)
+
+        # Mostra risultati nel log
+        Log ""
+        Log "[OK] RISULTATI SPEEDTEST OOKLA"
+        Log "─────────────────────────────────────────────"
+        Log " Server      : $serverName ($serverLoc)"
+        Log " Provider    : $isp"
+        Log " Download    : $downloadMbps Mbps"
+        Log " Upload      : $uploadMbps Mbps"
+        Log " Latenza     : $latencyMs ms"
+        Log " Jitter      : $jitterMs ms"
+        Log " Packet Loss : $([Math]::Round($packetLoss, 2))%"
+        Log "─────────────────────────────────────────────"
+        Log ""
+
+        Update-Status "[OK] DL $downloadMbps / UP $uploadMbps Mbps" $successColor
+
+    } catch {
+        Log "[X] Errore durante il test: $($_.Exception.Message)"
+        Update-Status "[X] Errore" $exitColor
+    }
+
+    # Pulizia file temporaneo
+    try { Remove-Item "$env:TEMP\speedtest_output.json" -Force -ErrorAction SilentlyContinue } catch {}
+
+    Log "==============================================================================================="; Log ""
+    Update-Progress 100
+    Flush-LogBuffer; Pump-UI
+}
+
 # ============================================================
 # BLOCCO 7 - FUNZIONI DI RIPARAZIONE
 # ============================================================
@@ -1700,7 +1788,7 @@ function Do-BackupAdvanced {
     if($script:isClosing -or(Test-Cancel)){return}
 
     # --- 1. Verifica presenza 7za.exe ---
-    $7zPath = Join-Path $scriptRoot "7za.exe"
+    $7zPath = Join-Path $scriptRoot "lib" "7za.exe"
     $7zFound = Test-Path $7zPath
 
     if (-not $7zFound) {
@@ -2066,19 +2154,20 @@ function Build-GUI {
                 @{Text="📊 Analisi Disco"; Action={Do-DiskAnalysis}; Tooltip="Analisi dettagliata spazio disco"}				
             )
         }
-        "Rete" = @{
-            Color = [System.Drawing.Color]::FromArgb(255, 50, 200)
-            Items = @(
-                @{Text="🌐 Flush DNS"; Action={Do-FlushDNS}; Tooltip="Svuota la cache DNS"}
-                @{Text="📶 Renew IP"; Action={Do-RenewIP}; Tooltip="Rinnova l'indirizzo IP della scheda di rete"}
-                @{Text="ℹ️ Info IP"; Action={Do-InfoIP}; Tooltip="Mostra tutte le informazioni di configurazione di rete"}
-                @{Text="🔧 Winsock"; Action={Do-ResetWinsock}; Tooltip="Resetta lo stack Winsock e il protocollo IP"}
-                @{Text="🔄 Reset Rete"; Action={Do-NetworkReset}; Tooltip="Reset completo stack di rete"}
-                @{Text="🔑 Wi-Fi Pass"; Action={Do-WifiPasswords}; Tooltip="Visualizza le password salvate delle reti Wi-Fi"}
-                @{Text="📡 Ping Test"; Action={Do-SpeedTest}; Tooltip="Esegue un test di latenza verso i server DNS principali"}
-                @{Text="🚀 Speed Internet"; Action={Do-SpeedInternet}; Tooltip="Esegue un test della velocità di connessione"}
-            )
-        }
+		"Rete" = @{
+			Color = [System.Drawing.Color]::FromArgb(255, 50, 200)
+			Items = @(
+				@{Text="🌐 Flush DNS"; Action={Do-FlushDNS}; Tooltip="Svuota la cache DNS"}
+				@{Text="📶 Renew IP"; Action={Do-RenewIP}; Tooltip="Rinnova l'indirizzo IP della scheda di rete"}
+				@{Text="ℹ️ Info IP"; Action={Do-InfoIP}; Tooltip="Mostra tutte le informazioni di configurazione di rete"}
+				@{Text="🔧 Winsock"; Action={Do-ResetWinsock}; Tooltip="Resetta lo stack Winsock e il protocollo IP"}
+				@{Text="🔄 Reset Rete"; Action={Do-NetworkReset}; Tooltip="Reset completo stack di rete"}
+				@{Text="🔑 Wi-Fi Pass"; Action={Do-WifiPasswords}; Tooltip="Visualizza le password salvate delle reti Wi-Fi"}
+				@{Text="📡 Ping Test"; Action={Do-SpeedTest}; Tooltip="Esegue un test di latenza verso i server DNS principali"}
+				@{Text="🚀 Speed Internet"; Action={Do-SpeedInternet}; Tooltip="Esegue un test della velocità di connessione (Cloudflare)"}
+				@{Text="📊 Speed Ookla"; Action={Do-SpeedOokla}; Tooltip="Esegue un test di velocità approfondito con Ookla Speedtest (download, upload, latenza, jitter, packet loss)"}
+			)
+		}
         "Riparazione" = @{
             Color = [System.Drawing.Color]::FromArgb(210, 150, 255)
             Items = @(
