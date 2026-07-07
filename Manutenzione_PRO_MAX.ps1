@@ -376,7 +376,7 @@ function Do-FullUpdate {
 
         Log "[!] Nuova versione completa disponibile!"
         $response = [System.Windows.Forms.MessageBox]::Show(
-            "Versione $remoteVersion disponibile.`n`nQuesta operazione aggiornerà TUTTI i file nella root della repository (escluse le cartelle Prompt e Docs).`n`nSaranno scaricati anche TUTTI i file .ps1 presenti.`n`nProcedere?",
+            "Versione $remoteVersion disponibile.`n`nQuesta operazione aggiornerà TUTTI i file nella repository.`n`nProcedere?",
             "Full Update Disponibile",
             "YesNo",
             "Question"
@@ -394,78 +394,105 @@ function Do-FullUpdate {
             return
         }
 
-        # --- 3. Ottieni la lista dei file dalla repository via API GitHub ---
-        $apiUrl = "https://api.github.com/repos/$($script:repoOwner)/$($script:repoName)/contents/"
-        Log "[>] Recupero lista file da GitHub..."
-        $contents = Invoke-RestMethod -Uri $apiUrl -Method Get -UseBasicParsing -TimeoutSec 15
-
-        # Filtra: solo file (escludi cartelle) e mantieni TUTTI i file, compresi tutti i .ps1
-        $excludedFolders = @("Prompt", "Docs")
-        $allFiles = $contents | Where-Object { 
-            $_.type -eq "file" -and $excludedFolders -notcontains $_.name
-        }
-
-        if (-not $allFiles) {
-            Log "[X] Nessun file trovato nella repository."
-            Update-Status "[X] Errore" $exitColor
-            Update-Progress 100
-            return
-        }
-
-        Log "[OK] Trovati $($allFiles.Count) file da scaricare."
-
-        # --- 4. Crea cartella backup ---
+        # --- 3. Crea cartella backup ---
         $backupDir = Join-Path $localDir "backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
         New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
         Log "[OK] Backup creato in: $backupDir"
 
-        $downloaded = 0
+        # --- 4. Scarica l'archivio ZIP della repository ---
+        $zipUrl = "https://github.com/$($script:repoOwner)/$($script:repoName)/archive/main.zip"
+        $zipPath = Join-Path $env:TEMP "repo_$(Get-Date -Format 'yyyyMMdd_HHmmss').zip"
+        Log "[DL] Download archivio repository..."
+        Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
+        Log "[OK] Download completato."
+
+        # --- 5. Estrai l'archivio in una cartella temporanea ---
+        $extractPath = Join-Path $env:TEMP "repo_extract_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+        New-Item -ItemType Directory -Force -Path $extractPath | Out-Null
+        Log "[>] Estrazione archivio..."
+        Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+        Log "[OK] Estrazione completata."
+
+        # --- 6. Copia i file (escluse cartelle Prompt e Docs) nella directory locale ---
+        $repoRoot = Join-Path $extractPath "$($script:repoName)-main"
+        $excludedFolders = @("Prompt", "Docs")
+        
+        # Ottieni tutti i file (ricorsivamente) dalla root della repository estratta
+        $allFiles = Get-ChildItem -Path $repoRoot -Recurse -File
+        $copied = 0
         $errors = 0
 
         foreach ($file in $allFiles) {
-            if (Test-Cancel) { return }
-            
-            $remoteUrl = $file.download_url
-            $localFile = Join-Path $localDir $file.name
-            
-            # Backup del file esistente
-            if (Test-Path $localFile) {
-                $backupFile = Join-Path $backupDir $file.name
-                Copy-Item -Path $localFile -Destination $backupFile -Force
-                Log "[OK] Backup: $($file.name)"
+            if (Test-Cancel) { 
+                Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+                Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+                return 
             }
             
-            # Download del nuovo file
+            # Calcola il percorso relativo rispetto alla root della repo
+            $relativePath = $file.FullName.Substring($repoRoot.Length + 1)
+            
+            # Verifica se il file si trova in una cartella esclusa
+            $exclude = $false
+            foreach ($folder in $excludedFolders) {
+                if ($relativePath -match "^$folder\\|\\$folder\\") {
+                    $exclude = $true
+                    break
+                }
+            }
+            if ($exclude) { continue }
+
+            $destFile = Join-Path $localDir $relativePath
+            $destDir = Split-Path $destFile -Parent
+            
+            # Crea la directory di destinazione se non esiste
+            if (-not (Test-Path $destDir)) {
+                New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+            }
+
+            # Backup del file esistente
+            if (Test-Path $destFile) {
+                $backupFile = Join-Path $backupDir $relativePath
+                $backupFileDir = Split-Path $backupFile -Parent
+                if (-not (Test-Path $backupFileDir)) {
+                    New-Item -ItemType Directory -Force -Path $backupFileDir | Out-Null
+                }
+                Copy-Item -Path $destFile -Destination $backupFile -Force
+            }
+
+            # Copia il nuovo file
             try {
-                Log "[DL] Download: $($file.name)..."
-                Invoke-WebRequest -Uri $remoteUrl -OutFile $localFile -UseBasicParsing -ErrorAction Stop
-                $downloaded++
-                Log "[OK] Aggiornato: $($file.name)"
+                Copy-Item -Path $file.FullName -Destination $destFile -Force -ErrorAction Stop
+                $copied++
             } catch {
                 $errors++
-                Log "[X] Errore download $($file.name): $($_.Exception.Message)"
+                Log "[X] Errore copia $relativePath : $($_.Exception.Message)"
             }
-            
-            $progress = [Math]::Round(($downloaded / $allFiles.Count) * 100)
+
+            $progress = [Math]::Round(($copied / $allFiles.Count) * 100)
             Update-Progress $progress
             Pump-UI
         }
 
-        # --- 5. Report finale ---
+        # --- 7. Pulizia file temporanei ---
+        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+        Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+
+        # --- 8. Report finale ---
         Log ""
         Log "==============================================================================================="
         Log "[OK] FULL UPDATE COMPLETATO!"
-        Log "     File scaricati: $downloaded / $($allFiles.Count)"
+        Log "     File copiati: $copied"
         if($errors -gt 0) { Log "[!] Errori: $errors" }
         Log "     Backup salvato in: $backupDir"
         Log "==============================================================================================="
         
         Update-Progress 100
-        Update-Status "[OK] Full Update completato ($downloaded file)" $successColor
+        Update-Status "[OK] Full Update completato ($copied file)" $successColor
         Flush-LogBuffer;Pump-UI
 
-        # --- 6. Riavvio automatico con il nuovo script ---
-        if ($downloaded -gt 0) {
+        # --- 9. Riavvio automatico con il nuovo script ---
+        if ($copied -gt 0) {
             $response = [System.Windows.Forms.MessageBox]::Show(
                 "Aggiornamento completato!`nRiavviare lo script con la nuova versione?",
                 "Riavvio necessario",
@@ -474,25 +501,7 @@ function Do-FullUpdate {
             )
             if ($response -eq "Yes") {
                 $exe = if ($isPwsh7) { "pwsh.exe" } else { "powershell.exe" }
-                
-                # Cerca TUTTI i possibili nomi di script nella cartella locale
-                $possibleNames = @("Manutenzione_PRO_MAX.ps1", "Manutenzione_PRO_MAX_v3.ps1", "Manutenzione_PRO_MAX.ps1")
-                $localScriptPath = $null
-                foreach ($name in $possibleNames) {
-                    $testPath = Join-Path $localDir $name
-                    if (Test-Path $testPath) {
-                        $localScriptPath = $testPath
-                        Log "[i] Trovato script: $name"
-                        break
-                    }
-                }
-                
-                # Se nessuno trovato, usa lo script corrente
-                if (-not $localScriptPath) {
-                    $localScriptPath = $PSCommandPath
-                    Log "[i] Fallback allo script corrente: $([System.IO.Path]::GetFileName($localScriptPath))"
-                }
-                
+                $localScriptPath = $PSCommandPath
                 if ($localScriptPath -and (Test-Path $localScriptPath)) {
                     Start-Process $exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$localScriptPath`""
                     $script:isClosing = $true
@@ -513,7 +522,6 @@ function Do-FullUpdate {
         Flush-LogBuffer;Pump-UI
     }
 }
-    #da qui
 
 
 function Do-Winget { if($script:isClosing -or(Test-Cancel)){return};if(-not(Test-WingetAvailable)){return};Update-Progress 10;Update-Status "[...] Winget..." $fgColor;Flush-LogBuffer;Pump-UI;Run-ProcessRealtime "winget" "upgrade --all --force --accept-package-agreements --accept-source-agreements --include-unknown" "Winget Upgrade" 10 25;Set-StepProgress 100 10 25;Update-Progress 100;Update-Status "[OK] Winget" $successColor;Flush-LogBuffer;Pump-UI }
