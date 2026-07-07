@@ -118,7 +118,7 @@ $logFile = Join-Path $tempDir "Manutenzione_PRO_MAX_$(Get-Date -Format 'yyyyMMdd
 $isPwsh7 = ($PSVersionTable.PSVersion.Major -ge 7)
 $script:pingProperty = if ($isPwsh7) { "Latency" } else { "ResponseTime" }
 
-$script:currentVersion = "3.0.3"
+$script:currentVersion = "3.0.4"
 $script:repoOwner = "pierpaolosanna"
 $script:repoName = "ManutenzioneProMax"
 $script:scriptFileName = "Manutenzione_PRO_MAX.ps1"
@@ -1714,9 +1714,11 @@ Update-Status "[OK] Completato!" $successColor;Flush-LogBuffer;Pump-UI
 # [Do-RunAll]
 # [LE STESSE DEL FILE ORIGINALE]
 
-# ============================================================
-# BLOCCO 14 - COSTRUZIONE GUI CON MENU A TENDINA (MIGLIORATA)
-# ============================================================
+
+
+#BLOCCO 14
+
+
 function Build-GUI {
     [System.Windows.Forms.Application]::EnableVisualStyles()
     [System.Windows.Forms.Application]::SetHighDpiMode([System.Windows.Forms.HighDpiMode]::PerMonitorV2)
@@ -1731,37 +1733,189 @@ function Build-GUI {
     $script:form.MaximizeBox = $true
     $script:form.WindowState = "Maximized"
     $script:form.Font = New-Object System.Drawing.Font("Segoe UI", 11)
+    $script:form.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::Dpi
     $dbProp = $script:form.GetType().GetProperty("DoubleBuffered", [System.Reflection.BindingFlags]"Instance,NonPublic")
     if ($dbProp) { $dbProp.SetValue($script:form, $true) }
 
     $script:pulseTimer = $null
     $script:pulseState = 0
-    $script:pulseColors = @(
-        [System.Drawing.Color]::FromArgb(56, 132, 244),
-        [System.Drawing.Color]::FromArgb(80, 180, 255),
-        [System.Drawing.Color]::FromArgb(56, 132, 244),
-        [System.Drawing.Color]::FromArgb(40, 100, 200)
-    )
+	$script:pulseColors = @(
+		[System.Drawing.Color]::FromArgb(255, 220, 0),   # Giallo acceso
+		[System.Drawing.Color]::FromArgb(255, 140, 0),   # Arancione brillante
+		[System.Drawing.Color]::FromArgb(0, 255, 100),   # Verde fluo
+		[System.Drawing.Color]::FromArgb(255, 80, 80)    # Rosso acceso
+	)
 
-    # --- HEADER (MIGLIORATO CON ICONE) ---
+    # --- DEFINIZIONE CATEGORIE (con icone e tooltip arricchiti) ---
+    $verde = [System.Drawing.Color]::FromArgb(50, 220, 1)
+    $availableColors = @(
+        $verde, $maintColor, $networkColor, $repairColor,
+        $securityColor, $infoColor, $cpuColor, $remoteColor,
+        $maintColor, $securityColor, $warningColor
+    )
+    $colorIndex = 0
+
+    $categories = @{
+        "Upgrade" = @{
+            Color = $availableColors[$colorIndex++]
+            Items = @(
+                @{Text="🔑 Eleva Admin"; Action={Restart-AsAdmin}; Tooltip="Riavvia lo script con privilegi amministrativi.\nNecessario per operazioni che richiedono diritti elevati (DISM, SFC, ecc.)"}
+                @{Text="💾 Crea Ripristino"; Action={Do-RestorePoint}; Tooltip="Crea un punto di ripristino del sistema prima di eseguire modifiche"}
+                @{Text="▶️ UPDATE PROGRAMMI"; Action={Do-RunAll}; Tooltip="Esegue la sequenza completa di aggiornamento dei Programmi e di Windows"}
+                @{Text="🔄 Winget"; Action={Do-Winget}; Tooltip="Aggiorna tutti i programmi installati tramite Winget"}
+                @{Text="📦 Store"; Action={Do-StoreUpdate}; Tooltip="Aggiorna tutte le app del Microsoft Store"}
+                @{Text="🔍 Cerca WU"; Action={Do-SearchWU}; Tooltip="Cerca gli aggiornamenti disponibili per Windows Update"}
+                @{Text="⬇️ Installa WU"; Action={Do-InstallWU}; Tooltip="Scarica e installa tutti gli aggiornamenti di Windows in sospeso"}
+                @{Text="🔧 Driver"; Action={Do-DriverUpdate}; Tooltip="Aggiorna driver via Windows Update"}
+                @{Text="📥 Aggiorna Script"; Action={Do-ScriptUpdate}; Tooltip="Controlla e installa la nuova versione dello script da GitHub"}
+                @{Text="📦 Full Update Script"; Action={Do-FullUpdate}; Tooltip="Aggiorna TUTTI i file del repository (script, batch, README, license)"}
+            )
+        }
+        "Pulizia" = @{
+            Color = $availableColors[$colorIndex++]
+            Items = @(
+                @{Text="🧹 Temp"; Action={Do-CleanTemp}; Tooltip="Pulisce le cartelle temporanee del sistema e dell'utente"}
+                @{Text="💾 Disk Cleanup"; Action={Do-DiskCleanup}; Tooltip="Avvia lo strumento di pulizia disco di Windows"}
+                @{Text="📊 Analisi Disco"; Action={Do-DiskAnalysis}; Tooltip="Analisi dettagliata spazio disco"}
+                @{Text="📝 Pulisci Log"; Action={Do-CleanLogs}; Tooltip="Pulisci file di log e dump"}
+            )
+        }
+        "Rete" = @{
+            Color = $availableColors[$colorIndex++]
+            Items = @(
+                @{Text="🌐 Flush DNS"; Action={Do-FlushDNS}; Tooltip="Svuota la cache DNS"}
+                @{Text="📶 Renew IP"; Action={Do-RenewIP}; Tooltip="Rinnova l'indirizzo IP della scheda di rete"}
+                @{Text="ℹ️ Info IP"; Action={Do-InfoIP}; Tooltip="Mostra tutte le informazioni di configurazione di rete"}
+                @{Text="🔧 Winsock"; Action={Do-ResetWinsock}; Tooltip="Resetta lo stack Winsock e il protocollo IP"}
+                @{Text="🔄 Reset Rete"; Action={Do-NetworkReset}; Tooltip="Reset completo stack di rete"}
+                @{Text="🔑 Wi-Fi Pass"; Action={Do-WifiPasswords}; Tooltip="Visualizza le password salvate delle reti Wi-Fi"}
+                @{Text="📡 Ping Test"; Action={Do-SpeedTest}; Tooltip="Esegue un test di latenza verso i server DNS principali"}
+                @{Text="🚀 Speed Internet"; Action={Do-SpeedInternet}; Tooltip="Esegue un test della velocità di connessione"}
+            )
+        }
+        "Riparazione" = @{
+            Color = $availableColors[$colorIndex++]
+            Items = @(
+                @{Text="🔨 SFC + DISM"; Action={Do-RepairSystem}; Tooltip="Esegue SFC /scannow e DISM per riparare i file di sistema"}
+                @{Text="⏱️ Pt. Ripristino"; Action={Do-RestorePoint}; Tooltip="Crea un punto di ripristino del sistema (limite 24 ore)"}
+            )
+        }
+        "Sicurezza" = @{
+            Color = $availableColors[$colorIndex++]
+            Items = @(
+                @{Text="🛡️ Scan Defender"; Action={Do-SecurityScan}; Tooltip="Avvia una scansione rapida con Windows Defender"}
+                @{Text="📋 Event Log"; Action={Do-EventLogErrors}; Tooltip="Mostra gli ultimi errori critici del registro eventi (7gg)"}
+                @{Text="🏥 Health Check"; Action={Do-SystemHealth}; Tooltip="Verifica integrità critica del sistema"}
+            )
+        }
+        "Diagnostica" = @{
+            Color = $availableColors[$colorIndex++]
+            Items = @(
+                @{Text="💻 Info Sistema"; Action={Do-SystemInfo}; Tooltip="Mostra informazioni dettagliate su hardware e sistema operativo"}
+                @{Text="🔋 Batteria"; Action={Do-BatteryReport}; Tooltip="Genera un report sulla salute della batteria"}
+                @{Text="⏰ Uptime"; Action={Do-Uptime}; Tooltip="Visualizza da quanto tempo il sistema è in esecuzione"}
+                @{Text="📈 Top Processi"; Action={Do-TopProcesses}; Tooltip="Elenca i processi che consumano più CPU"}
+                @{Text="🚀 Startup"; Action={Do-StartupPrograms}; Tooltip="Elenca i programmi avviati automaticamente all'avvio"}
+                @{Text="💿 Spazio Disco"; Action={Do-DiskSpace}; Tooltip="Analizza e mostra lo spazio occupato dalle cartelle principali"}
+                @{Text="⚙️ Servizi"; Action={Do-ServiceStatus}; Tooltip="Controlla lo stato dei servizi di sistema principali"}
+                @{Text="🔓 CPU Unlock"; Action={Do-UnlockCPU}; Tooltip="Sblocca le opzioni avanzate di gestione energia della CPU"}
+            )
+        }
+        "Sistema" = @{
+            Color = $availableColors[$colorIndex++]
+            Items = @(
+                @{Text="🎨 Ottimizza Visivi"; Action={Do-OptimizeVisual}; Tooltip="Ottimizza gli effetti visivi di Windows"}
+                @{Text="⚡ Ottimizza Avvio"; Action={Do-BootOptimization}; Tooltip="Ottimizza servizi e avvio sistema"}
+                @{Text="🖥️ Assist. Remota"; Action={Do-RemoteAssist}; Tooltip="Scarica e avvia RustDesk per assistenza remota"}
+                @{Text="🔄 Riavvia PC"; Action={$r=[System.Windows.Forms.MessageBox]::Show("Riavviare?","Conferma","YesNo","Warning");if($r -eq "Yes"){shutdown /r /t 5 /c "Riavvio"}}; Tooltip="Riavvia il sistema dopo 5 secondi"}
+            )
+        }
+        "Dominio" = @{
+            Color = $availableColors[$colorIndex++]
+            Items = @(
+                @{Text="🏢 Info Dominio"; Action={Do-DomainInfo}; Tooltip="Mostra informazioni sul dominio e PC"}
+                @{Text="🖥️ Test DC"; Action={Do-DCTest}; Tooltip="Test ping ai Domain Controller"}
+                @{Text="🕐 Sincronizza Ora"; Action={Do-SyncTime}; Tooltip="Sincronizza orario con Domain Controller"}
+                @{Text="🗑️ Flush Kerberos"; Action={Do-FlushKerberos}; Tooltip="Svuota cache ticket Kerberos"}
+                @{Text="📋 Info GPO"; Action={Do-GPOInfo}; Tooltip="Mostra le GPO applicate"}
+                @{Text="🔄 Reset Profilo"; Action={Do-ResetNetworkProfile}; Tooltip="Reimposta profilo di rete (disconnette brevemente)"}
+                @{Text="🌐 Test DNS"; Action={Do-DNSTest}; Tooltip="Verifica risoluzione DNS dominio"}
+                @{Text="📍 Info Sito AD"; Action={Do-ADSiteInfo}; Tooltip="Mostra sito AD corrente"}
+                @{Text="🔗 Test LDAP"; Action={Do-LDAPTest}; Tooltip="Verifica connettività LDAP"}
+                @{Text="🔑 Cambia Password"; Action={Do-DomainPassword}; Tooltip="Cambia password dominio"}
+                @{Text="📅 Ultimo Login"; Action={Do-LastLogin}; Tooltip="Mostra ultimo login dominio"}
+                @{Text="👥 Gruppi Utente"; Action={Do-GroupMembership}; Tooltip="Mostra gruppi dominio dell'utente"}
+            )
+        }
+        "Backup" = @{
+            Color = $availableColors[$colorIndex++]
+            Items = @(
+                @{Text="💾 Backup Files"; Action={Do-BackupFiles}; Tooltip="Comprimi e salva files in backup .zip"}
+                @{Text="💾 Crea Ripristino"; Action={Do-RestorePoint}; Tooltip="Crea un punto di ripristino del sistema prima di eseguire modifiche"}
+            )
+        }
+        "Privacy" = @{
+            Color = $availableColors[$colorIndex++]
+            Items = @(
+                @{Text="🔒 Privacy Windows"; Action={Do-PrivacyWindows}; Tooltip="Disabilita telemetria, Cortana, segnalazione errori Windows"}
+                @{Text="📁 Privacy Office"; Action={Do-PrivacyOffice}; Tooltip="Disabilita telemetria e invio dati di Office"}
+                @{Text="🌐 Privacy Edge"; Action={Do-PrivacyEdge}; Tooltip="Disabilita telemetria e suggerimenti di Edge"}
+                @{Text="⏰ Privacy Task"; Action={Do-PrivacyTasks}; Tooltip="Disabilita attività pianificate di telemetria"}
+                @{Text="🚀 DISABILITA TUTTO"; Action={Do-PrivacyAll}; Tooltip="Esegue TUTTE le privacy in sequenza"}
+            )
+        }
+        "Utility" = @{
+            Color = $availableColors[$colorIndex++]
+            Items = @(
+                @{Text="⚙️ Riavvia su BIOS"; Action={Start-Process "C:\Windows\System32\shutdown.exe" -ArgumentList "/r /fw /f /t 0"}; Tooltip="Riavvia il PC direttamente nel BIOS/UEFI"}
+                @{Text="🔁 Riavvia PC"; Action={Start-Process "C:\Windows\System32\shutdown.exe" -ArgumentList "-r -t 00"}; Tooltip="Riavvia il computer immediatamente"}
+                @{Text="👤 Disconnetti Utente"; Action={Start-Process "C:\Windows\System32\shutdown.exe" -ArgumentList "/l"}; Tooltip="Disconnette l'utente corrente"}
+                @{Text="⏻ Arresta PC"; Action={Start-Process "C:\Windows\System32\shutdown.exe" -ArgumentList "-s -f -t 00"}; Tooltip="Spegne il computer immediatamente"}
+                @{Text="⏰ Shutdown Sched."; Action={Do-ScheduleShutdown}; Tooltip="Programma lo spegnimento forzato del PC ogni giorno"}
+                @{Text="❌ Rimuovi Shutdown"; Action={Do-RemoveShutdown}; Tooltip="Rimuove il task di spegnimento programmato"}
+                @{Text="💬 AI Chat"; Action={Show-AIChatDialog}; Tooltip="Apre il dialogo AI Chat con supporto Gemini, Groq, Cloudflare e Bynara"}
+                @{Text="🔍 Ricerca File"; Action={Show-SearchDialog}; Tooltip="Apre il dialogo di ricerca rapida file e contenuti"}
+                @{Text="⏹️ Annulla"; Action={$script:cancelRequested=$true}; Tooltip="Annulla l'operazione in corso in modo sicuro"}
+                @{Text="❌ Esci"; Action={$script:isClosing=$true;$script:form.Close()}; Tooltip="Chiude l'applicazione di manutenzione"}
+            )
+        }
+    }
+
+    # --- HEADER CON CATEGORIE A 2 RIGHE E ICONE ---
     $headerPanel = New-Object System.Windows.Forms.Panel
     $headerPanel.Dock = "Top"
-    $headerPanel.Height = 40
     $headerPanel.BackColor = $bgPanel
-    $headerPanel.Padding = New-Object System.Windows.Forms.Padding(0, 0, 0, 2)
+    $headerPanel.Padding = New-Object System.Windows.Forms.Padding(0, 0, 0, 0)
+
+    $headerTable = New-Object System.Windows.Forms.TableLayoutPanel
+    $headerTable.Dock = "Fill"
+    $headerTable.ColumnCount = 2
+    $headerTable.RowCount = 1
+    $headerTable.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))
+    $headerTable.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+    $headerTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+    $headerTable.BackColor = $bgPanel
+    $headerPanel.Controls.Add($headerTable)
+
+    # Colonna 0: Titolo + badge + versione
+    $titleContainer = New-Object System.Windows.Forms.FlowLayoutPanel
+    $titleContainer.Dock = "Fill"
+    $titleContainer.FlowDirection = "LeftToRight"
+    $titleContainer.BackColor = $bgPanel
+    $titleContainer.Padding = New-Object System.Windows.Forms.Padding(0, 0, 0, 0)
 
     $titleLabel = New-Object System.Windows.Forms.Label
     $titleLabel.Text = "⚡ MANUTENZIONE PRO MAX"
     $titleLabel.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
     $titleLabel.ForeColor = $fgColor
     $titleLabel.AutoSize = $true
-    $titleLabel.Location = New-Object System.Drawing.Point(12, 8)
-    $headerPanel.Controls.Add($titleLabel)
+    $titleLabel.TextAlign = "MiddleLeft"
+    $titleContainer.Controls.Add($titleLabel)
 
     $adminBadge = New-Object System.Windows.Forms.Label
     $adminBadge.Font = New-Object System.Drawing.Font("Segoe UI", 7, [System.Drawing.FontStyle]::Bold)
     $adminBadge.AutoSize = $true
-    $adminBadge.Location = New-Object System.Drawing.Point(250, 12)
+    $adminBadge.Margin = New-Object System.Windows.Forms.Padding(8, 0, 0, 0)
     if ($isAdmin) {
         $adminBadge.Text = "🔒 ADMIN"
         $adminBadge.ForeColor = $successColor
@@ -1769,17 +1923,7 @@ function Build-GUI {
         $adminBadge.Text = "👤 UTENTE"
         $adminBadge.ForeColor = $warningColor
     }
-    $headerPanel.Controls.Add($adminBadge)
-
-    $comboCategory = New-Object System.Windows.Forms.ComboBox
-    $comboCategory.Location = New-Object System.Drawing.Point(440, 6)
-    $comboCategory.Size = New-Object System.Drawing.Size(220, 28)
-    $comboCategory.BackColor = $bgCard
-    $comboCategory.ForeColor = $fgColor
-    $comboCategory.FlatStyle = "Flat"
-    $comboCategory.DropDownStyle = "DropDownList"
-    $comboCategory.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $headerPanel.Controls.Add($comboCategory)
+    $titleContainer.Controls.Add($adminBadge)
 
     $psVer = "PS$($PSVersionTable.PSVersion.Major).$($PSVersionTable.PSVersion.Minor)"
     $verLabel = New-Object System.Windows.Forms.Label
@@ -1787,163 +1931,174 @@ function Build-GUI {
     $verLabel.Font = New-Object System.Drawing.Font("Segoe UI", 7)
     $verLabel.ForeColor = $fgDim
     $verLabel.AutoSize = $true
-    $verLabel.Location = New-Object System.Drawing.Point(960, 12)
-    $headerPanel.Controls.Add($verLabel)
+    $verLabel.TextAlign = "MiddleLeft"
+    $verLabel.Margin = New-Object System.Windows.Forms.Padding(15, 0, 0, 0)
+    $titleContainer.Controls.Add($verLabel)
+
+    $headerTable.Controls.Add($titleContainer, 0, 0)
+
+    # Colonna 1: Categorie
+    $categoryGrid = New-Object System.Windows.Forms.TableLayoutPanel
+    $categoryGrid.Dock = "Fill"
+    $categoryGrid.RowCount = 2
+    $categoryGrid.ColumnCount = 0
+    $categoryGrid.BackColor = $bgPanel
+    $categoryGrid.Padding = New-Object System.Windows.Forms.Padding(4, 2, 4, 2)
+    $categoryGrid.AutoSize = $false
+    $categoryGrid.GrowStyle = "AddColumns"
+    $categoryGrid.RowStyles.Clear()
+    $categoryGrid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
+    $categoryGrid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
+    $headerTable.Controls.Add($categoryGrid, 1, 0)
+
+    $script:selectedCategory = $null
+    $categoryButtons = @{}
+    $catList = @($categories.Keys)
+    $numCols = [Math]::Ceiling($catList.Count / 2)
+    $colWidth = 155
+
+    $catIcons = @{
+        "Upgrade"     = "⬆️"
+        "Pulizia"     = "🧹"
+        "Rete"        = "🌐"
+        "Riparazione" = "🔧"
+        "Sicurezza"   = "🛡️"
+        "Diagnostica" = "📊"
+        "Sistema"     = "⚙️"
+        "Dominio"     = "🏢"
+        "Backup"      = "💾"
+        "Privacy"     = "🔒"
+        "Utility"     = "🧰"
+    }
+
+    for ($col = 0; $col -lt $numCols; $col++) {
+        $categoryGrid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Absolute, $colWidth)))
+        for ($row = 0; $row -lt 2; $row++) {
+            $idx = $row * $numCols + $col
+            if ($idx -ge $catList.Count) { break }
+            $catName = $catList[$idx]
+            $catColor = $categories[$catName].Color
+            $btn = New-Object System.Windows.Forms.Button
+            $btn.Text = "$($catIcons[$catName]) $catName"
+            $btn.FlatStyle = "Flat"
+            $btn.FlatAppearance.BorderSize = 2
+            $btn.FlatAppearance.BorderColor = $catColor
+            $btn.BackColor = $bgCard
+            $btn.ForeColor = $catColor
+            $btn.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(60, 60, 80)
+            $btn.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(80, 80, 100)
+            $btn.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+            $btn.AutoSize = $false
+            $btn.Width = $colWidth - 8
+            $btn.Height = 30
+            $btn.Margin = New-Object System.Windows.Forms.Padding(4, 2, 4, 2)
+            $btn.Padding = New-Object System.Windows.Forms.Padding(10, 0, 0, 0)
+            $btn.TextAlign = "MiddleLeft"
+            $btn.Cursor = [System.Windows.Forms.Cursors]::Hand
+            $btn.Tag = $catName
+            $tooltip = New-Object System.Windows.Forms.ToolTip
+            $tooltip.SetToolTip($btn, "Seleziona categoria: $catName")
+            $btn.Add_Click({
+                param($sender, $e)
+                $script:selectedCategory = $sender.Tag
+                $catColor = $categories[$sender.Tag].Color
+                foreach ($b in $categoryButtons.Values) {
+                    $b.BackColor = $bgCard
+                    $b.ForeColor = $categories[$b.Tag].Color
+                    $b.FlatAppearance.BorderColor = $categories[$b.Tag].Color
+                }
+                $sender.BackColor = $catColor
+                $sender.ForeColor = [System.Drawing.Color]::White
+                $sender.FlatAppearance.BorderColor = $catColor
+                Update-Buttons
+            })
+            $categoryGrid.Controls.Add($btn, $col, $row)
+            $categoryButtons[$catName] = $btn
+        }
+    }
+
+    $defaultCat = "Upgrade"
+    if ($categoryButtons.ContainsKey($defaultCat)) {
+        $script:selectedCategory = $defaultCat
+        $catColor = $categories[$defaultCat].Color
+        $categoryButtons[$defaultCat].BackColor = $catColor
+        $categoryButtons[$defaultCat].ForeColor = [System.Drawing.Color]::White
+        $categoryButtons[$defaultCat].FlatAppearance.BorderColor = $catColor
+    }
+
+    $headerPanel.Height = 40 + 2 * 22
 
     $script:form.Controls.Add($headerPanel)
 
-    # --- CATEGORIE (CON NUOVA VOCE "Ricerca") ---
-    $categories = @{
-        "Aggiornamenti" = @(
-			@{Text="🔑 Eleva Admin"; Color=$elevateColor; Action={Restart-AsAdmin}; Tooltip="Riavvia lo script con privilegi amministrativi"},
-			@{Text="💾 Crea Ripristino"; Color=$repairColor; Action={Do-RestorePoint}; Tooltip="Crea un punto di ripristino del sistema prima di eseguire modifiche"},			
-            @{Text="▶️ UPDATE PROGRAMMI"; Color=$runAllColor; Action={Do-RunAll}; Tooltip="Esegue la sequenza completa di aggiornamento dei Programmi e di Windows"},
-            @{Text="🔄 Winget"; Color=$accentColor; Action={Do-Winget}; Tooltip="Aggiorna tutti i programmi installati tramite Winget"},
-            @{Text="📦 Store"; Color=$accentColor; Action={Do-StoreUpdate}; Tooltip="Aggiorna tutte le app del Microsoft Store"},
-            @{Text="🔍 Cerca WU"; Color=$infoColor; Action={Do-SearchWU}; Tooltip="Cerca gli aggiornamenti disponibili per Windows Update"},
-            @{Text="⬇️ Installa WU"; Color=$infoColor; Action={Do-InstallWU}; Tooltip="Scarica e installa tutti gli aggiornamenti di Windows in sospeso"},
-            @{Text="🔧 Driver"; Color=$accentColor; Action={Do-DriverUpdate}; Tooltip="Aggiorna driver via Windows Update"},
-            @{Text="📥 Aggiorna Script"; Color=$infoColor; Action={Do-ScriptUpdate}; Tooltip="Controlla e installa la nuova versione dello script da GitHub"},
-            @{Text="📦 Full Update Script"; Color=$runAllColor; Action={Do-FullUpdate}; Tooltip="Aggiorna TUTTI i file del repository (script, batch, README, license)"}
-        )
-        "Pulizia" = @(
-            @{Text="🧹 Temp"; Color=$maintColor; Action={Do-CleanTemp}; Tooltip="Pulisce le cartelle temporanee del sistema e dell'utente"},
-            @{Text="💾 Disk Cleanup"; Color=$maintColor; Action={Do-DiskCleanup}; Tooltip="Avvia lo strumento di pulizia disco di Windows"},
-            @{Text="📊 Analisi Disco"; Color=$maintColor; Action={Do-DiskAnalysis}; Tooltip="Analisi dettagliata spazio disco"},
-            @{Text="📝 Pulisci Log"; Color=$maintColor; Action={Do-CleanLogs}; Tooltip="Pulisci file di log e dump"}
-        )
-        "Rete" = @(
-            @{Text="🌐 Flush DNS"; Color=$networkColor; Action={Do-FlushDNS}; Tooltip="Svuota la cache DNS"},
-            @{Text="📶 Renew IP"; Color=$networkColor; Action={Do-RenewIP}; Tooltip="Rinnova l'indirizzo IP della scheda di rete"},
-            @{Text="ℹ️ Info IP"; Color=$infoColor; Action={Do-InfoIP}; Tooltip="Mostra tutte le informazioni di configurazione di rete"},
-            @{Text="🔧 Winsock"; Color=$networkColor; Action={Do-ResetWinsock}; Tooltip="Resetta lo stack Winsock e il protocollo IP"},
-            @{Text="🔄 Reset Rete"; Color=$networkColor; Action={Do-NetworkReset}; Tooltip="Reset completo stack di rete"},
-            @{Text="🔑 Wi-Fi Pass"; Color=$networkColor; Action={Do-WifiPasswords}; Tooltip="Visualizza le password salvate delle reti Wi-Fi"},
-            @{Text="📡 Ping Test"; Color=$networkColor; Action={Do-SpeedTest}; Tooltip="Esegue un test di latenza verso i server DNS principali"},
-            @{Text="🚀 Speed Internet"; Color=$networkColor; Action={Do-SpeedInternet}; Tooltip="Esegue un test della velocità di connessione"}
-        )
-        "Riparazione" = @(
-            @{Text="🔨 SFC + DISM"; Color=$repairColor; Action={Do-RepairSystem}; Tooltip="Esegue SFC /scannow e DISM per riparare i file di sistema"},
-            @{Text="⏱️ Pt. Ripristino"; Color=$repairColor; Action={Do-RestorePoint}; Tooltip="Crea un punto di ripristino del sistema (limite 24 ore)"}
-        )
-        "Sicurezza" = @(
-            @{Text="🛡️ Scan Defender"; Color=$securityColor; Action={Do-SecurityScan}; Tooltip="Avvia una scansione rapida con Windows Defender"},
-            @{Text="📋 Event Log"; Color=$securityColor; Action={Do-EventLogErrors}; Tooltip="Mostra gli ultimi errori critici del registro eventi (7gg)"},
-            @{Text="🏥 Health Check"; Color=$securityColor; Action={Do-SystemHealth}; Tooltip="Verifica integrità critica del sistema"}
-        )
-        "Diagnostica" = @(
-            @{Text="💻 Info Sistema"; Color=$infoColor; Action={Do-SystemInfo}; Tooltip="Mostra informazioni dettagliate su hardware e sistema operativo"},
-            @{Text="🔋 Batteria"; Color=$infoColor; Action={Do-BatteryReport}; Tooltip="Genera un report sulla salute della batteria"},
-            @{Text="⏰ Uptime"; Color=$infoColor; Action={Do-Uptime}; Tooltip="Visualizza da quanto tempo il sistema è in esecuzione"},
-            @{Text="📈 Top Processi"; Color=$cpuColor; Action={Do-TopProcesses}; Tooltip="Elenca i processi che consumano più CPU"},
-            @{Text="🚀 Startup"; Color=$cpuColor; Action={Do-StartupPrograms}; Tooltip="Elenca i programmi avviati automaticamente all'avvio"},
-            @{Text="💿 Spazio Disco"; Color=$maintColor; Action={Do-DiskSpace}; Tooltip="Analizza e mostra lo spazio occupato dalle cartelle principali"},
-            @{Text="⚙️ Servizi"; Color=$infoColor; Action={Do-ServiceStatus}; Tooltip="Controlla lo stato dei servizi di sistema principali"},
-            @{Text="🔓 CPU Unlock"; Color=$cpuColor; Action={Do-UnlockCPU}; Tooltip="Sblocca le opzioni avanzate di gestione energia della CPU"}
-        )
-        "Sistema" = @(
-            @{Text="🎨 Ottimizza Visivi"; Color=$cpuColor; Action={Do-OptimizeVisual}; Tooltip="Ottimizza gli effetti visivi di Windows"},
-            @{Text="⚡ Ottimizza Avvio"; Color=$cpuColor; Action={Do-BootOptimization}; Tooltip="Ottimizza servizi e avvio sistema"},
-            @{Text="🖥️ Assist. Remota"; Color=$remoteColor; Action={Do-RemoteAssist}; Tooltip="Scarica e avvia RustDesk per assistenza remota"},         
-            @{Text="🔄 Riavvia PC"; Color=$restartColor; Action={$r=[System.Windows.Forms.MessageBox]::Show("Riavviare?","Conferma","YesNo","Warning");if($r -eq "Yes"){shutdown /r /t 5 /c "Riavvio"}}; Tooltip="Riavvia il sistema dopo 5 secondi"}
-        )
-        "Dominio" = @(
-            @{Text="🏢 Info Dominio"; Color=$infoColor; Action={Do-DomainInfo}; Tooltip="Mostra informazioni sul dominio e PC"},
-            @{Text="🖥️ Test DC"; Color=$networkColor; Action={Do-DCTest}; Tooltip="Test ping ai Domain Controller"},
-            @{Text="🕐 Sincronizza Ora"; Color=$infoColor; Action={Do-SyncTime}; Tooltip="Sincronizza orario con Domain Controller"},
-            @{Text="🗑️ Flush Kerberos"; Color=$securityColor; Action={Do-FlushKerberos}; Tooltip="Svuota cache ticket Kerberos"},
-            @{Text="📋 Info GPO"; Color=$infoColor; Action={Do-GPOInfo}; Tooltip="Mostra le GPO applicate"},
-            @{Text="🔄 Reset Profilo"; Color=$networkColor; Action={Do-ResetNetworkProfile}; Tooltip="Reimposta profilo di rete (disconnette brevemente)"},
-            @{Text="🌐 Test DNS"; Color=$networkColor; Action={Do-DNSTest}; Tooltip="Verifica risoluzione DNS dominio"},
-            @{Text="📍 Info Sito AD"; Color=$infoColor; Action={Do-ADSiteInfo}; Tooltip="Mostra sito AD corrente"},
-            @{Text="🔗 Test LDAP"; Color=$infoColor; Action={Do-LDAPTest}; Tooltip="Verifica connettività LDAP"},
-            @{Text="🔑 Cambia Password"; Color=$securityColor; Action={Do-DomainPassword}; Tooltip="Cambia password dominio"},
-            @{Text="📅 Ultimo Login"; Color=$infoColor; Action={Do-LastLogin}; Tooltip="Mostra ultimo login dominio"},
-            @{Text="👥 Gruppi Utente"; Color=$infoColor; Action={Do-GroupMembership}; Tooltip="Mostra gruppi dominio dell'utente"}
-        )
-        "Backup" = @(
-            @{Text="💾 Backup Files"; Color=$maintColor; Action={Do-BackupFiles}; Tooltip="Comprimi e salva files in backup .zip"},
-			@{Text="💾 Crea Ripristino"; Color=$repairColor; Action={Do-RestorePoint}; Tooltip="Crea un punto di ripristino del sistema prima di eseguire modifiche"}			
+    # --- SEPARATORE ---
+    $separator = New-Object System.Windows.Forms.Panel
+    $separator.Dock = "Top"
+    $separator.Height = 2
+    $separator.BackColor = $separatorColor
+    $script:form.Controls.Add($separator)
 
-        )
-        "Privacy" = @(
-            @{Text="🔒 Privacy Windows"; Color=$securityColor; Action={Do-PrivacyWindows}; Tooltip="Disabilita telemetria, Cortana, segnalazione errori Windows"},
-            @{Text="📁 Privacy Office"; Color=$securityColor; Action={Do-PrivacyOffice}; Tooltip="Disabilita telemetria e invio dati di Office"},
-            @{Text="🌐 Privacy Edge"; Color=$securityColor; Action={Do-PrivacyEdge}; Tooltip="Disabilita telemetria e suggerimenti di Edge"},
-            @{Text="⏰ Privacy Task"; Color=$securityColor; Action={Do-PrivacyTasks}; Tooltip="Disabilita attività pianificate di telemetria"},
-            @{Text="🚀 DISABILITA TUTTO"; Color=$securityColor; Action={Do-PrivacyAll}; Tooltip="Esegue TUTTE le privacy in sequenza"}
-        )
-        "Utility" = @(
-            @{Text="⚙️ Riavvia su BIOS"; Color=$restartColor; Action={Start-Process "C:\Windows\System32\shutdown.exe" -ArgumentList "/r /fw /f /t 0"}; Tooltip="Riavvia il PC direttamente nel BIOS/UEFI"},
-            @{Text="🔁 Riavvia PC"; Color=$restartColor; Action={Start-Process "C:\Windows\System32\shutdown.exe" -ArgumentList "-r -t 00"}; Tooltip="Riavvia il computer immediatamente"},
-            @{Text="👤 Disconnetti Utente"; Color=$warningColor; Action={Start-Process "C:\Windows\System32\shutdown.exe" -ArgumentList "/l"}; Tooltip="Disconnette l'utente corrente"},
-            @{Text="⏻ Arresta PC"; Color=$exitColor; Action={Start-Process "C:\Windows\System32\shutdown.exe" -ArgumentList "-s -f -t 00"}; Tooltip="Spegne il computer immediatamente"},
-            @{Text="⏰ Shutdown Sched."; Color=$warningColor; Action={Do-ScheduleShutdown}; Tooltip="Programma lo spegnimento forzato del PC ogni giorno"},
-            @{Text="❌ Rimuovi Shutdown"; Color=$exitColor; Action={Do-RemoveShutdown}; Tooltip="Rimuove il task di spegnimento programmato"},
-            @{Text="💬 AI Chat"; Color=$infoColor; Action={Show-AIChatDialog}; Tooltip="Apre il dialogo AI Chat con supporto Gemini, Groq, Cloudflare e Bynara"},
-            @{Text="🔍 Ricerca File"; Color=$searchColor; Action={Show-SearchDialog}; Tooltip="Apre il dialogo di ricerca rapida file e contenuti"},
-            @{Text="⏹️ Annulla"; Color=$exitColor; Action={$script:cancelRequested=$true}; Tooltip="Annulla l'operazione in corso in modo sicuro"},
-            @{Text="❌ Esci"; Color=$exitColor; Action={$script:isClosing=$true;$script:form.Close()}; Tooltip="Chiude l'applicazione di manutenzione"}
-        )
-        "Manutenzione Script" = @(
-            @{Text="📥 Aggiorna Script"; Color=$infoColor; Action={Do-ScriptUpdate}; Tooltip="Controlla e installa la nuova versione dello script da GitHub"},
-            @{Text="📦 Full Update"; Color=$runAllColor; Action={Do-FullUpdate}; Tooltip="Aggiorna TUTTI i file del repository (script, batch, README, license)"},
-            @{Text="📄 Export Report"; Color=$infoColor; Action={Do-ExportReport}; Tooltip="Esporta il contenuto del log in un file di testo"}
-        )
-    }
-# SCHEDA DI DEFAULT AGGIORNAMENTI
-    foreach ($cat in $categories.Keys) { [void]$comboCategory.Items.Add($cat) }
-    if ($comboCategory.Items.Count -gt 0) {
-        $defaultCategory = "Aggiornamenti"
-        $index = $comboCategory.Items.IndexOf($defaultCategory)
-        if ($index -ge 0) { $comboCategory.SelectedIndex = $index } else { $comboCategory.SelectedIndex = 0 }
-    }
-
-    # --- LAYOUT ---
+    # --- LAYOUT PRINCIPALE ---
     $mainPanel = New-Object System.Windows.Forms.Panel
     $mainPanel.Dock = "Fill"
     $mainPanel.BackColor = $bgColor
-    $mainPanel.Padding = New-Object System.Windows.Forms.Padding(0, 2, 0, 0)
+    $mainPanel.Padding = New-Object System.Windows.Forms.Padding(0, 0, 0, 0)
     $script:form.Controls.Add($mainPanel)
 
     $tableLayout = New-Object System.Windows.Forms.TableLayoutPanel
     $tableLayout.Dock = "Fill"
     $tableLayout.ColumnCount = 2
     $tableLayout.RowCount = 1
-    $tableLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Absolute, 190)))
-    $tableLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+    $tableLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 15)))
+    $tableLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 85)))
     $tableLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
     $tableLayout.BackColor = $bgColor
     $mainPanel.Controls.Add($tableLayout)
 
-    # --- PULSANTI ---
-    $buttonPanel = New-Object System.Windows.Forms.Panel
-    $buttonPanel.Dock = "Fill"
-    $buttonPanel.BackColor = $bgPanel
-    $buttonPanel.AutoScroll = $true
-    $buttonPanel.Padding = New-Object System.Windows.Forms.Padding(5, 5, 3, 5)
-    $tableLayout.Controls.Add($buttonPanel, 0, 0)
+    # --- PANNELLO PULSANTI (verticale) ---
+    $buttonGrid = New-Object System.Windows.Forms.TableLayoutPanel
+    $buttonGrid.Dock = "Fill"
+    $buttonGrid.ColumnCount = 1
+    $buttonGrid.RowCount = 0
+    $buttonGrid.AutoScroll = $true
+    $buttonGrid.BackColor = $bgPanel
+    $buttonGrid.Padding = New-Object System.Windows.Forms.Padding(6, 120, 6, 6)
+    $tableLayout.Controls.Add($buttonGrid, 0, 0)
 
-    $sepLine = New-Object System.Windows.Forms.Panel
-    $sepLine.Dock = "Right"
-    $sepLine.Width = 1
-    $sepLine.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 70)
-    $buttonPanel.Controls.Add($sepLine)
-
-    # --- LOG ---
+    # --- PANNELLO LOG (riempie lo spazio) ---
     $logPanel = New-Object System.Windows.Forms.Panel
     $logPanel.Dock = "Fill"
     $logPanel.BackColor = $bgColor
     $logPanel.Padding = New-Object System.Windows.Forms.Padding(15, 5, 15, 5)
     $tableLayout.Controls.Add($logPanel, 1, 0)
 
-    # --- STATO ---
+    # --- LOG BOX ---
+    $logBoxPanel = New-Object System.Windows.Forms.Panel
+    $logBoxPanel.Dock = "Fill"
+    $logBoxPanel.BackColor = $logBg
+    $logBoxPanel.Padding = New-Object System.Windows.Forms.Padding(2, 25, 2, 2)
+    $logBoxPanel.BorderStyle = "FixedSingle"
+    $logPanel.Controls.Add($logBoxPanel)
+
+    $script:logBox = New-Object System.Windows.Forms.RichTextBox
+    $script:logBox.Dock = "Fill"
+    $script:logBox.BackColor = $logBg
+    $script:logBox.ForeColor = [System.Drawing.Color]::FromArgb(200, 200, 210)
+    $script:logBox.Font = New-Object System.Drawing.Font("Consolas", 12, [System.Drawing.FontStyle]::Regular)
+    $script:logBox.ReadOnly = $true
+    $script:logBox.BorderStyle = "None"
+    $script:logBox.ScrollBars = "ForcedVertical"
+    $script:logBox.WordWrap = $false
+    $script:logBox.DetectUrls = $false
+    $script:logBox.ShortcutsEnabled = $true
+    $logBoxPanel.Controls.Add($script:logBox)
+
+    # --- STATO (in basso, aggiunto al mainPanel, non al logPanel) ---
     $statusPanel = New-Object System.Windows.Forms.Panel
     $statusPanel.Dock = "Bottom"
-    $statusPanel.Height = 36
+    $statusPanel.Height = 58
     $statusPanel.BackColor = $bgPanel
     $statusPanel.Padding = New-Object System.Windows.Forms.Padding(5, 2, 5, 2)
-    $mainPanel.Controls.Add($statusPanel)
+    $statusPanel.BorderStyle = "FixedSingle"
 
     $script:statusLabel = New-Object System.Windows.Forms.Label
     $script:statusLabel.Text = "✅ Pronto"
@@ -1963,93 +2118,64 @@ function Build-GUI {
     $statusPanel.Controls.Add($script:progressLabel)
 
     $script:progressBar = New-Object System.Windows.Forms.ProgressBar
-    $script:progressBar.Location = New-Object System.Drawing.Point(8, 18)
-    $script:progressBar.Size = New-Object System.Drawing.Size(1020, 12)
+	$script:progressBar.Location = New-Object System.Drawing.Point(8, 22)
+	$script:progressBar.Size = New-Object System.Drawing.Size(1020, 20)
     $script:progressBar.Anchor = [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
     $script:progressBar.Style = "Continuous"
     $script:progressBar.Value = 0
     $script:progressBar.Minimum = 0
     $script:progressBar.Maximum = 100
     $script:progressBar.ForeColor = $accentColor
+    $script:progressBar.BackColor = [System.Drawing.Color]::FromArgb(40, 40, 48)
     $statusPanel.Controls.Add($script:progressBar)
 
     $statusPanel.Add_Resize({ $script:progressBar.Width = $statusPanel.Width - 16 })
 
-    # --- LOG BOX ---
-    $logBoxPanel = New-Object System.Windows.Forms.Panel
-    $logBoxPanel.Dock = "Fill"
-    $logBoxPanel.BackColor = $logBg
-    $logBoxPanel.Padding = New-Object System.Windows.Forms.Padding(2, 2, 2, 2)
-    $logBoxPanel.BorderStyle = "None"
-    $logPanel.Controls.Add($logBoxPanel)
+    # Aggiungi statusPanel al mainPanel (in basso)
+    $mainPanel.Controls.Add($statusPanel)
 
-    $script:logBox = New-Object System.Windows.Forms.RichTextBox
-    $script:logBox.Dock = "Fill"
-    $script:logBox.BackColor = $logBg
-    $script:logBox.ForeColor = [System.Drawing.Color]::FromArgb(200, 200, 210)
-    $script:logBox.Font = New-Object System.Drawing.Font("Consolas", 12, [System.Drawing.FontStyle]::Regular)
-    $script:logBox.ReadOnly = $true
-    $script:logBox.BorderStyle = "None"
-    $script:logBox.ScrollBars = "ForcedVertical"
-    $script:logBox.WordWrap = $false
-    $script:logBox.DetectUrls = $false
-    $script:logBox.ShortcutsEnabled = $true
-
-    $logBoxPanel.Controls.Add($script:logBox)
-
-    # --- UPDATE BUTTONS (MIGLIORATA CON DPI SCALING) ---
+    # --- FUNZIONE AGGIORNA PULSANTI (verticale) ---
     function Update-Buttons {
-        $buttonPanel.Controls.Clear()
-        $sepLine = New-Object System.Windows.Forms.Panel
-        $sepLine.Dock = "Right"
-        $sepLine.Width = 1
-        $sepLine.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 70)
-        $buttonPanel.Controls.Add($sepLine)
+        $buttonGrid.Controls.Clear()
+        $buttonGrid.RowCount = 0
+        if ([string]::IsNullOrEmpty($script:selectedCategory)) { return }
+        if (-not $categories.ContainsKey($script:selectedCategory)) { return }
 
-        if ($comboCategory.SelectedItem -eq $null) { return }
-        $selectedCat = $comboCategory.SelectedItem.ToString()
-        if (-not $categories.ContainsKey($selectedCat)) { return }
-
-        $buttons = $categories[$selectedCat]
-        $dpiScale = [Math]::Max(1, [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width / 1920)
-        $btnWidth = [Math]::Max(120, ($buttonPanel.Width - 18) * [Math]::Min($dpiScale, 1.5))
-        $btnHeight = [Math]::Max(28, 28 * [Math]::Min($dpiScale, 1.5))
-        $fontSize = [Math]::Max(8, 9 * [Math]::Min($dpiScale, 1.5))
-        $gap = [Math]::Max(4, 4 * [Math]::Min($dpiScale, 1.5))
-
-        $totalButtonsHeight = ($buttons.Count * $btnHeight) + (($buttons.Count - 1) * $gap)
-        $panelHeight = $buttonPanel.ClientSize.Height - 10
-        $verticalOffset = [Math]::Max(5, ($panelHeight - $totalButtonsHeight) / 2)
-        if ($verticalOffset -lt 5) { $verticalOffset = 5 }
-
-        $x = 5; $y = $verticalOffset
-        foreach ($btnData in $buttons) {
+        $catData = $categories[$script:selectedCategory]
+        $categoryColor = $catData.Color
+        $items = $catData.Items
+        $rowIndex = 0
+        foreach ($btnData in $items) {
             $btn = New-Object System.Windows.Forms.Button
             $btn.Text = $btnData.Text
-            $btn.Size = New-Object System.Drawing.Size($btnWidth, $btnHeight)
-            $btn.Location = New-Object System.Drawing.Point($x, $y)
             $btn.FlatStyle = "Flat"
-            $btn.FlatAppearance.BorderSize = 1
-            $btn.FlatAppearance.BorderColor = $btnData.Color
-            $btn.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(48, 48, 56)
-            $btn.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(60, 60, 70)
+            $btn.FlatAppearance.BorderSize = 3
+            $btn.FlatAppearance.BorderColor = $categoryColor
+            $btn.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(80, 80, 100)
+            $btn.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(100, 100, 120)
             $btn.BackColor = $bgCard
-            $btn.ForeColor = $btnData.Color
-            $btn.Font = New-Object System.Drawing.Font("Segoe UI Semibold", [Math]::Min($fontSize, 14))
+            $btn.ForeColor = $categoryColor
+            $btn.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 9)
             $btn.Cursor = [System.Windows.Forms.Cursors]::Hand
-            $btn.TextAlign = "MiddleCenter"
+            $btn.TextAlign = "MiddleLeft"
+            $btn.Padding = New-Object System.Windows.Forms.Padding(10, 0, 0, 0)
+            $btn.Height = 34
+            $btn.Margin = New-Object System.Windows.Forms.Padding(5, 4, 5, 4)
+            $btn.Dock = [System.Windows.Forms.DockStyle]::Fill
             $btn.Add_Click($btnData.Action)
             if ($btnData.Tooltip) {
                 $tt = New-Object System.Windows.Forms.ToolTip
                 $tt.SetToolTip($btn, $btnData.Tooltip)
             }
-            $buttonPanel.Controls.Add($btn)
-            $y += $btnHeight + $gap
+            $buttonGrid.RowCount++
+            $buttonGrid.Controls.Add($btn, 0, $rowIndex)
+            $buttonGrid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
+            $rowIndex++
         }
-        $autoScrollHeight = $y + 20
-        $buttonPanel.AutoScrollMinSize = New-Object System.Drawing.Size(0, $autoScrollHeight)
+        $buttonGrid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
     }
 
+    # --- Progress Pulse ---
     function Start-ProgressPulse {
         if ($script:pulseTimer) { $script:pulseTimer.Stop() }
         $script:pulseTimer = New-Object System.Windows.Forms.Timer
@@ -2086,8 +2212,7 @@ function Build-GUI {
         }
     }
 
-    $comboCategory.Add_SelectedIndexChanged({ Update-Buttons })
-    $buttonPanel.Add_Resize({ Update-Buttons })
+    # Inizializza
     Update-Buttons
 
     $script:uiTimer = New-Object System.Windows.Forms.Timer
@@ -2095,29 +2220,27 @@ function Build-GUI {
     $script:uiTimer.Add_Tick({ Flush-LogBuffer })
     $script:uiTimer.Start()
 
-	$script:form.Add_Shown({
-		Log ""; Log " ⚡ Manutenzione PRO MAX v$($script:currentVersion) Peters"
-		Log " $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | $psVer"
-		Log " Log: $logFile"; Log ""
-		Flush-LogBuffer
+    $script:form.Add_Shown({
+        Log ""; Log " ⚡ Manutenzione PRO MAX v$($script:currentVersion) Peters"
+        Log " $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | $psVer"
+        Log " Log: $logFile"; Log ""
+        Flush-LogBuffer
 
-		# Messaggio sempre visibile nel log (in verde)
-		$script:logBox.SuspendLayout()
-		$script:logBox.SelectionStart = $script:logBox.TextLength
-		$script:logBox.SelectionLength = 0
-		$script:logBox.SelectionColor = $successColor   # verde (definito nel BLOCCO 2)
-		$script:logBox.SelectionFont = New-Object System.Drawing.Font("Consolas", 12, [System.Drawing.FontStyle]::Bold)
-		if ($isAdmin) {
-			$msg = "✅ Sei già amministratore. Tutte le funzionalità sono disponibili.`nCrea sempre un punto di ripristino con Crea Ripristino prima di ogni modifica."
-		} else {
-			$msg = "🚀 Esegui 'Eleva Admin' per ottenere le complete potenzialità.`nCrea sempre un punto di ripristino con Crea Ripristino prima di ogni modifica."
-		}
-
-		$script:logBox.AppendText("`r`n$msg`r`n")
-		$script:logBox.SelectionColor = $script:logBox.ForeColor   # ripristina il colore predefinito
-		$script:logBox.ResumeLayout()
-		$script:logBox.ScrollToCaret()
-	})
+        $script:logBox.SuspendLayout()
+        $script:logBox.SelectionStart = $script:logBox.TextLength
+        $script:logBox.SelectionLength = 0
+        $script:logBox.SelectionColor = $successColor
+        $script:logBox.SelectionFont = New-Object System.Drawing.Font("Consolas", 12, [System.Drawing.FontStyle]::Bold)
+        if ($isAdmin) {
+            $msg = "✅ Sei già amministratore. Tutte le funzionalità sono disponibili.`nCrea sempre un punto di ripristino con Crea Ripristino prima di ogni modifica."
+        } else {
+            $msg = "🚀 Esegui 'Eleva Admin' per ottenere le complete potenzialità.`nCrea sempre un punto di ripristino con Crea Ripristino prima di ogni modifica."
+        }
+        $script:logBox.AppendText("`r`n$msg`r`n")
+        $script:logBox.SelectionColor = $script:logBox.ForeColor
+        $script:logBox.ResumeLayout()
+        $script:logBox.ScrollToCaret()
+    })
 
     $script:form.Add_FormClosing({
         $script:isClosing = $true
@@ -2151,7 +2274,6 @@ function Build-GUI {
 
     [System.Windows.Forms.Application]::Run($script:form)
 }
-
 # ============================================================
 # BLOCCO 15 - AVVIO APPLICAZIONE
 # ============================================================
