@@ -1,4 +1,4 @@
-# Manutenzione PRO MAX v3.0.3
+# Manutenzione PRO MAX v3.0.4
 
 All-in-one Windows maintenance and diagnostics tool with a modern dark GUI. Portable, no installation required.
 
