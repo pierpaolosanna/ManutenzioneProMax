@@ -1,7 +1,7 @@
 # ============================================================
 # BLOCCO 1 - VERSIONE E CONFIGURAZIONE REPO
 # ============================================================
-# Versione: 3.0.3
+# Versione: 3.0.4
 # Data: 2026-07-01
 # Descrizione: Tool di manutenzione Windows con GUI dark e menu a tendina
 #              Moduli: AICHAT.ps1, Search.ps1
@@ -1695,6 +1695,75 @@ function Do-RemoveShutdown {
     Flush-LogBuffer;Pump-UI
 }
 
+# DISABILITA limiti TPM CPU RAM 
+function Do-TpmCpuRamUnlock {
+    if($script:isClosing -or(Test-Cancel)){return}
+    Update-Status "[...] Sblocco TPM/CPU/RAM..." $securityColor
+    Flush-LogBuffer;Pump-UI
+
+    Log "";Log "==============================================================================================="
+    Log "[>] RIMOZIONE LIMITAZIONI WINDOWS 11"
+    Log "==============================================================================================="
+    
+    # --- Step 1: Rimozione vecchi marker di compatibilità ---
+    Log "[1] Rimozione vecchi record di upgrade falliti..."
+    try {
+        Remove-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\CompatMarkers" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Shared" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\TargetVersionUpgradeExperienceIndicators" -Recurse -Force -ErrorAction SilentlyContinue
+        Log "[OK] Pulizia completata."
+    } catch { Log "[X] Errore pulizia: $($_.Exception.Message)" }
+
+    # --- Step 2: Simula hardware compatibile ---
+    Log "[2] Impostazione valori hardware compatibili..."
+    try {
+        $path = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\HwReqChk"
+        if (-not (Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
+        Set-ItemProperty -Path $path -Name "HwReqChkVars" -Value @(
+            "SQ_SecureBootCapable=TRUE",
+            "SQ_SecureBootEnabled=TRUE",
+            "SQ_TpmVersion=2",
+            "SQ_RamMB=8192"
+        ) -Type MultiString -Force -ErrorAction Stop
+        Log "[OK] Valori hardware applicati."
+    } catch { Log "[X] Errore impostazione valori: $($_.Exception.Message)" }
+
+    # --- Step 3: Abilita upgrade su hardware non supportato ---
+    Log "[3] Abilitazione upgrade su TPM/CPU non supportati..."
+    try {
+        $path = "HKLM:\SYSTEM\Setup\MoSetup"
+        if (-not (Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
+        Set-ItemProperty -Path $path -Name "AllowUpgradesWithUnsupportedTPMOrCPU" -Value 1 -Type DWord -Force -ErrorAction Stop
+        Log "[OK] Policy abilitata."
+    } catch { Log "[X] Errore policy: $($_.Exception.Message)" }
+
+    # --- Step 4: Imposta flag di eleggibilità ---
+    Log "[4] Impostazione flag di eleggibilità..."
+    try {
+        $path = "HKCU:\Software\Microsoft\PCHC"
+        if (-not (Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
+        Set-ItemProperty -Path $path -Name "UpgradeEligibility" -Value 1 -Type DWord -Force -ErrorAction Stop
+        Log "[OK] Flag eleggibilità impostata."
+    } catch { Log "[X] Errore flag: $($_.Exception.Message)" }
+
+    Log ""
+    Log "[OK] TUTTE LE OPERAZIONI COMPLETATE!"
+    Log "[i] Ora puoi avviare l'upgrade a Windows 11 tramite Assistente o setup.exe."
+    Log "[i] Nessun riavvio richiesto."
+    Log "===============================================================================================";Log ""
+    Update-Progress 100
+    Update-Status "[OK] Sblocco completato" $successColor
+    Flush-LogBuffer;Pump-UI
+
+    # Notifica all'utente
+    [System.Windows.Forms.MessageBox]::Show(
+        "Limiti TPM/CPU/RAM rimossi con successo!`n`nPuoi ora eseguire l'upgrade a Windows 11.`nNessun riavvio è necessario.",
+        "Sblocco Completato",
+        "OK",
+        "Information"
+    )
+}
+
 # ============================================================
 # BLOCCO 12 - RUN PROCESS (Utility)
 # ============================================================
@@ -1757,31 +1826,31 @@ function Build-GUI {
 
     $categories = @{
         "Upgrade" = @{
-            Color = $availableColors[$colorIndex++]
+            Color = [System.Drawing.Color]::FromArgb(0, 220, 255)
             Items = @(
                 @{Text="🔑 Eleva Admin"; Action={Restart-AsAdmin}; Tooltip="Riavvia lo script con privilegi amministrativi.\nNecessario per operazioni che richiedono diritti elevati (DISM, SFC, ecc.)"}
                 @{Text="💾 Crea Ripristino"; Action={Do-RestorePoint}; Tooltip="Crea un punto di ripristino del sistema prima di eseguire modifiche"}
-                @{Text="▶️ UPDATE PROGRAMMI"; Action={Do-RunAll}; Tooltip="Esegue la sequenza completa di aggiornamento dei Programmi e di Windows"}
                 @{Text="🔄 Winget"; Action={Do-Winget}; Tooltip="Aggiorna tutti i programmi installati tramite Winget"}
                 @{Text="📦 Store"; Action={Do-StoreUpdate}; Tooltip="Aggiorna tutte le app del Microsoft Store"}
                 @{Text="🔍 Cerca WU"; Action={Do-SearchWU}; Tooltip="Cerca gli aggiornamenti disponibili per Windows Update"}
                 @{Text="⬇️ Installa WU"; Action={Do-InstallWU}; Tooltip="Scarica e installa tutti gli aggiornamenti di Windows in sospeso"}
                 @{Text="🔧 Driver"; Action={Do-DriverUpdate}; Tooltip="Aggiorna driver via Windows Update"}
-                @{Text="📥 Aggiorna Script"; Action={Do-ScriptUpdate}; Tooltip="Controlla e installa la nuova versione dello script da GitHub"}
+ #               @{Text="📥 Aggiorna Script"; Action={Do-ScriptUpdate}; Tooltip="Controlla e installa la nuova versione dello script da GitHub"}
                 @{Text="📦 Full Update Script"; Action={Do-FullUpdate}; Tooltip="Aggiorna TUTTI i file del repository (script, batch, README, license)"}
+                @{Text="▶️ UPGRADE TOTAL"; Action={Do-RunAll}; Tooltip="Esegue la sequenza completa di aggiornamento dei Programmi e di Windows"}				
             )
         }
         "Pulizia" = @{
-            Color = $availableColors[$colorIndex++]
+            Color = [System.Drawing.Color]::FromArgb(255, 180, 100)
             Items = @(
                 @{Text="🧹 Temp"; Action={Do-CleanTemp}; Tooltip="Pulisce le cartelle temporanee del sistema e dell'utente"}
                 @{Text="💾 Disk Cleanup"; Action={Do-DiskCleanup}; Tooltip="Avvia lo strumento di pulizia disco di Windows"}
-                @{Text="📊 Analisi Disco"; Action={Do-DiskAnalysis}; Tooltip="Analisi dettagliata spazio disco"}
                 @{Text="📝 Pulisci Log"; Action={Do-CleanLogs}; Tooltip="Pulisci file di log e dump"}
+                @{Text="📊 Analisi Disco"; Action={Do-DiskAnalysis}; Tooltip="Analisi dettagliata spazio disco"}				
             )
         }
         "Rete" = @{
-            Color = $availableColors[$colorIndex++]
+            Color = [System.Drawing.Color]::FromArgb(255, 50, 200)
             Items = @(
                 @{Text="🌐 Flush DNS"; Action={Do-FlushDNS}; Tooltip="Svuota la cache DNS"}
                 @{Text="📶 Renew IP"; Action={Do-RenewIP}; Tooltip="Rinnova l'indirizzo IP della scheda di rete"}
@@ -1794,14 +1863,14 @@ function Build-GUI {
             )
         }
         "Riparazione" = @{
-            Color = $availableColors[$colorIndex++]
+            Color = [System.Drawing.Color]::FromArgb(210, 150, 255)
             Items = @(
                 @{Text="🔨 SFC + DISM"; Action={Do-RepairSystem}; Tooltip="Esegue SFC /scannow e DISM per riparare i file di sistema"}
                 @{Text="⏱️ Pt. Ripristino"; Action={Do-RestorePoint}; Tooltip="Crea un punto di ripristino del sistema (limite 24 ore)"}
             )
         }
         "Sicurezza" = @{
-            Color = $availableColors[$colorIndex++]
+            Color = [System.Drawing.Color]::FromArgb(155, 120, 200)
             Items = @(
                 @{Text="🛡️ Scan Defender"; Action={Do-SecurityScan}; Tooltip="Avvia una scansione rapida con Windows Defender"}
                 @{Text="📋 Event Log"; Action={Do-EventLogErrors}; Tooltip="Mostra gli ultimi errori critici del registro eventi (7gg)"}
@@ -1809,7 +1878,7 @@ function Build-GUI {
             )
         }
         "Diagnostica" = @{
-            Color = $availableColors[$colorIndex++]
+            Color = [System.Drawing.Color]::FromArgb(80, 255, 200)
             Items = @(
                 @{Text="💻 Info Sistema"; Action={Do-SystemInfo}; Tooltip="Mostra informazioni dettagliate su hardware e sistema operativo"}
                 @{Text="🔋 Batteria"; Action={Do-BatteryReport}; Tooltip="Genera un report sulla salute della batteria"}
@@ -1818,20 +1887,21 @@ function Build-GUI {
                 @{Text="🚀 Startup"; Action={Do-StartupPrograms}; Tooltip="Elenca i programmi avviati automaticamente all'avvio"}
                 @{Text="💿 Spazio Disco"; Action={Do-DiskSpace}; Tooltip="Analizza e mostra lo spazio occupato dalle cartelle principali"}
                 @{Text="⚙️ Servizi"; Action={Do-ServiceStatus}; Tooltip="Controlla lo stato dei servizi di sistema principali"}
-                @{Text="🔓 CPU Unlock"; Action={Do-UnlockCPU}; Tooltip="Sblocca le opzioni avanzate di gestione energia della CPU"}
+
             )
         }
         "Sistema" = @{
-            Color = $availableColors[$colorIndex++]
+            Color = [System.Drawing.Color]::FromArgb(255, 220, 0)
             Items = @(
                 @{Text="🎨 Ottimizza Visivi"; Action={Do-OptimizeVisual}; Tooltip="Ottimizza gli effetti visivi di Windows"}
                 @{Text="⚡ Ottimizza Avvio"; Action={Do-BootOptimization}; Tooltip="Ottimizza servizi e avvio sistema"}
-                @{Text="🖥️ Assist. Remota"; Action={Do-RemoteAssist}; Tooltip="Scarica e avvia RustDesk per assistenza remota"}
+                @{Text="🔓 CPU Unlock"; Action={Do-UnlockCPU}; Tooltip="Sblocca le opzioni avanzate di gestione energia della CPU"}	
+				@{Text="🖥️ TPM CPU RAM"; Action={Do-TpmCpuRamUnlock}; Tooltip="Rimuove le limitazioni di TPM, CPU e RAM per consentire l'upgrade a Windows 11 su hardware non supportato"}				
                 @{Text="🔄 Riavvia PC"; Action={$r=[System.Windows.Forms.MessageBox]::Show("Riavviare?","Conferma","YesNo","Warning");if($r -eq "Yes"){shutdown /r /t 5 /c "Riavvio"}}; Tooltip="Riavvia il sistema dopo 5 secondi"}
             )
         }
         "Dominio" = @{
-            Color = $availableColors[$colorIndex++]
+            Color = [System.Drawing.Color]::FromArgb(100, 200, 255)
             Items = @(
                 @{Text="🏢 Info Dominio"; Action={Do-DomainInfo}; Tooltip="Mostra informazioni sul dominio e PC"}
                 @{Text="🖥️ Test DC"; Action={Do-DCTest}; Tooltip="Test ping ai Domain Controller"}
@@ -1842,20 +1912,20 @@ function Build-GUI {
                 @{Text="🌐 Test DNS"; Action={Do-DNSTest}; Tooltip="Verifica risoluzione DNS dominio"}
                 @{Text="📍 Info Sito AD"; Action={Do-ADSiteInfo}; Tooltip="Mostra sito AD corrente"}
                 @{Text="🔗 Test LDAP"; Action={Do-LDAPTest}; Tooltip="Verifica connettività LDAP"}
-                @{Text="🔑 Cambia Password"; Action={Do-DomainPassword}; Tooltip="Cambia password dominio"}
+                @{Text="🔑 Cambia Password"; Action={Do-DomainPassword}; Tooltip="Cambia password dominio"},
                 @{Text="📅 Ultimo Login"; Action={Do-LastLogin}; Tooltip="Mostra ultimo login dominio"}
                 @{Text="👥 Gruppi Utente"; Action={Do-GroupMembership}; Tooltip="Mostra gruppi dominio dell'utente"}
             )
         }
         "Backup" = @{
-            Color = $availableColors[$colorIndex++]
+            Color = [System.Drawing.Color]::FromArgb(200, 255, 100)
             Items = @(
                 @{Text="💾 Backup Files"; Action={Do-BackupFiles}; Tooltip="Comprimi e salva files in backup .zip"}
                 @{Text="💾 Crea Ripristino"; Action={Do-RestorePoint}; Tooltip="Crea un punto di ripristino del sistema prima di eseguire modifiche"}
             )
         }
         "Privacy" = @{
-            Color = $availableColors[$colorIndex++]
+            Color = [System.Drawing.Color]::FromArgb(255, 100, 0)
             Items = @(
                 @{Text="🔒 Privacy Windows"; Action={Do-PrivacyWindows}; Tooltip="Disabilita telemetria, Cortana, segnalazione errori Windows"}
                 @{Text="📁 Privacy Office"; Action={Do-PrivacyOffice}; Tooltip="Disabilita telemetria e invio dati di Office"}
@@ -1865,7 +1935,7 @@ function Build-GUI {
             )
         }
         "Utility" = @{
-            Color = $availableColors[$colorIndex++]
+            Color = [System.Drawing.Color]::FromArgb(155, 220, 0)
             Items = @(
                 @{Text="⚙️ Riavvia su BIOS"; Action={Start-Process "C:\Windows\System32\shutdown.exe" -ArgumentList "/r /fw /f /t 0"}; Tooltip="Riavvia il PC direttamente nel BIOS/UEFI"}
                 @{Text="🔁 Riavvia PC"; Action={Start-Process "C:\Windows\System32\shutdown.exe" -ArgumentList "-r -t 00"}; Tooltip="Riavvia il computer immediatamente"}
@@ -1876,7 +1946,8 @@ function Build-GUI {
                 @{Text="💬 AI Chat"; Action={Show-AIChatDialog}; Tooltip="Apre il dialogo AI Chat con supporto Gemini, Groq, Cloudflare e Bynara"}
                 @{Text="🔍 Ricerca File"; Action={Show-SearchDialog}; Tooltip="Apre il dialogo di ricerca rapida file e contenuti"}
                 @{Text="⏹️ Annulla"; Action={$script:cancelRequested=$true}; Tooltip="Annulla l'operazione in corso in modo sicuro"}
-                @{Text="❌ Esci"; Action={$script:isClosing=$true;$script:form.Close()}; Tooltip="Chiude l'applicazione di manutenzione"}
+ #               @{Text="❌ Esci"; Action={$script:isClosing=$true;$script:form.Close()}; Tooltip="Chiude l'applicazione di manutenzione"}
+                @{Text="🖥️ Assist. Remota"; Action={Do-RemoteAssist}; Tooltip="Scarica e avvia RustDesk per assistenza remota"}				
             )
         }
     }
