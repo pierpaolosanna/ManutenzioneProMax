@@ -1326,7 +1326,37 @@ function Do-CleanLogs {
 # ============================================================
 function Do-FlushDNS { if($script:isClosing -or(Test-Cancel)){return};Update-Status "[...] DNS..." $networkColor;Flush-LogBuffer;Pump-UI;Log "";Log "===============================================================================================";Log "[>] Flush DNS";Log "===============================================================================================";try{$o=& ipconfig /flushdns 2>&1;Log-Output $o;Log "[OK] DNS svuotata."}catch{Log "[X] $($_.Exception.Message)"};Log "===============================================================================================";Log "";Update-Progress 100;Update-Status "[OK] DNS" $successColor;Flush-LogBuffer;Pump-UI }
 function Do-RenewIP { if($script:isClosing -or(Test-Cancel)){return};Update-Status "[...] IP..." $networkColor;Flush-LogBuffer;Pump-UI;Log "";Log "===============================================================================================";Log "[>] Rinnovo IP";Log "===============================================================================================";try{& ipconfig /release 2>&1|Out-Null;Pump-UI;Start-Sleep 2;Pump-UI;$o=& ipconfig /renew 2>&1;Log-Output $o;Log "[OK] IP rinnovato."}catch{Log "[X] $($_.Exception.Message)"};Log "===============================================================================================";Log "";Update-Progress 100;Update-Status "[OK] IP" $successColor;Flush-LogBuffer;Pump-UI }
-function Do-InfoIP { if($script:isClosing -or(Test-Cancel)){return};Update-Status "[...] Info..." $infoColor;Flush-LogBuffer;Pump-UI;Log "";Log "===============================================================================================";Log "[>] Info Rete";Log "===============================================================================================";try{$o=& ipconfig /all 2>&1;foreach($l in $o){Log " $l"}}catch{Log "[X] $($_.Exception.Message)"};Log "===============================================================================================";Log "";Update-Progress 100;Update-Status "[OK] Info" $successColor;Flush-LogBuffer;Pump-UI }
+
+function Do-InfoIP {
+    if($script:isClosing -or(Test-Cancel)){return}
+    Update-Status "[...] Info..." $infoColor
+    Flush-LogBuffer;Pump-UI
+    Log "";Log "==============================================================================================="
+    Log "[>] Info Rete"
+    Log "==============================================================================================="
+
+    # --- Ottieni IP pubblico ---
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $publicIP = Invoke-RestMethod -Uri "https://api.ipify.org" -TimeoutSec 5 -ErrorAction Stop
+        Log " [🌐] IP Pubblico : $publicIP"
+    } catch {
+        Log " [🌐] IP Pubblico : non rilevato (verifica connessione)"
+    }
+    Log ""
+
+    try {
+        $o = & ipconfig /all 2>&1
+        foreach($l in $o) { Log " $l" }
+    } catch {
+        Log "[X] $($_.Exception.Message)"
+    }
+    Log "===============================================================================================";Log ""
+    Update-Progress 100
+    Update-Status "[OK] Info" $successColor
+    Flush-LogBuffer;Pump-UI
+}
+
 function Do-ResetWinsock { if($script:isClosing -or(Test-Cancel)){return};if(-not $isAdmin){Log "[X] Admin.";Update-Status "[!] Admin" $warningColor;Flush-LogBuffer;Update-Progress 100;return};Update-Status "[...] Winsock..." $networkColor;Flush-LogBuffer;Pump-UI;Log "";Log "===============================================================================================";Log "[>] Winsock Reset";Log "===============================================================================================";try{& netsh winsock reset 2>&1|Out-Null;& netsh int ip reset 2>&1|Out-Null;Log "[OK] Reset. Riavvio consigliato."}catch{Log "[X] $($_.Exception.Message)"};Log "===============================================================================================";Log "";Update-Progress 100;Update-Status "[OK] Winsock" $successColor;Flush-LogBuffer;Pump-UI }
 function Do-NetworkReset {
     if($script:isClosing -or(Test-Cancel)){return}
@@ -1364,7 +1394,6 @@ function Do-WifiPasswords { if($script:isClosing -or(Test-Cancel)){return};Updat
 function Do-SpeedTest { if($script:isClosing -or(Test-Cancel)){return};Update-Status "[...] Ping..." $networkColor;Flush-LogBuffer;Pump-UI;Log "";Log "===============================================================================================";Log "[>] Ping Test";Log "===============================================================================================";$targets=@(@{N="Google";I="8.8.8.8"},@{N="Cloudflare";I="1.1.1.1"},@{N="OpenDNS";I="208.67.222.222"});foreach($t in $targets){if(Test-Cancel){return};try{$ping=Test-Connection -ComputerName $t.I -Count 3 -ErrorAction Stop;$prop=$script:pingProperty;$avg=[Math]::Round(($ping|Measure-Object -Property $prop -Average).Average,1);Log " $($t.N): ${avg}ms"}catch{Log " [X] $($t.N)"};Pump-UI};Log "===============================================================================================";Log "";Update-Progress 100;Update-Status "[OK] Ping" $successColor;Flush-LogBuffer;Pump-UI }
 function Do-SpeedInternet { if($script:isClosing -or(Test-Cancel)){return};Update-Status "[...] Speedtest..." $networkColor;Flush-LogBuffer;Pump-UI;Log "";Log "===============================================================================================";Log "[>] Speedtest Cloudflare";Log "===============================================================================================";[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;$latency=0;try{$sw=[System.Diagnostics.Stopwatch]::StartNew();Invoke-WebRequest -Uri "https://speed.cloudflare.com/__down?bytes=0" -Method Get -TimeoutSec 5 -UseBasicParsing|Out-Null;$sw.Stop();$latency=[Math]::Round($sw.Elapsed.TotalMilliseconds,1);Log " Ping: ${latency}ms"}catch{};Flush-LogBuffer;Pump-UI;if(Test-Cancel){return};$dl=0;try{$sw=[System.Diagnostics.Stopwatch]::StartNew();$data=Invoke-WebRequest -Uri "https://speed.cloudflare.com/__down?bytes=20000000" -Method Get -TimeoutSec 30 -UseBasicParsing;$sw.Stop();$bytes=$data.RawContentLength;if($bytes -and $sw.Elapsed.TotalSeconds -gt 0){$dl=[Math]::Round((($bytes*8)/1MB)/$sw.Elapsed.TotalSeconds,2)};Log " DL: ${dl} Mbps"}catch{};Flush-LogBuffer;Pump-UI;if(Test-Cancel){return};$ul=0;try{$buf=New-Object byte[](5MB);(New-Object Random).NextBytes($buf);$sw=[System.Diagnostics.Stopwatch]::StartNew();Invoke-WebRequest -Uri "https://speed.cloudflare.com/__up" -Method Post -Body $buf -TimeoutSec 30 -UseBasicParsing|Out-Null;$sw.Stop();if($sw.Elapsed.TotalSeconds -gt 0){$ul=[Math]::Round((5*8)/$sw.Elapsed.TotalSeconds,2)};Log " UP: ${ul} Mbps"}catch{};Log "";Log " Ping ${latency}ms | DL ${dl} | UP ${ul} Mbps";Log "===============================================================================================";Log "";Update-Progress 100;Update-Status "[OK] DL $dl / UP $ul" $successColor;Flush-LogBuffer;Pump-UI }
 
-
 function Do-SpeedOokla {
     if ($script:isClosing -or (Test-Cancel)) { return }
 
@@ -1374,6 +1403,16 @@ function Do-SpeedOokla {
     Log ""; Log "==============================================================================================="
     Log "[>] SPEEDTEST OOKLA (dettagliato)"
     Log "==============================================================================================="
+
+    # --- Ottieni IP pubblico ---
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $publicIP = Invoke-RestMethod -Uri "https://api.ipify.org" -TimeoutSec 5 -ErrorAction Stop
+        Log " [🌐] IP Pubblico : $publicIP"
+    } catch {
+        Log " [🌐] IP Pubblico : non rilevato (verifica connessione)"
+    }
+    Log ""
 
     # --- Cerca speedtest.exe in lib ---
     $speedtestExe = Join-Path $scriptRoot "lib" "speedtest.exe"
@@ -1391,7 +1430,7 @@ function Do-SpeedOokla {
         Log "[>] Avvio test (potrebbe richiedere 20-30 secondi)..."
         Flush-LogBuffer; Pump-UI
 
-        $process = Start-Process -FilePath $speedtestExe -ArgumentList "--accept-license --format=json" -Wait -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\speedtest_output.json"
+        $process = Start-Process -FilePath $speedtestExe -ArgumentList "--accept-license --accept-gdpr --format=json" -Wait -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\speedtest_output.json"
         if ($process.ExitCode -ne 0) {
             Log "[X] Errore nell'esecuzione di speedtest (codice: $($process.ExitCode))"
             Update-Status "[X] Errore speedtest" $exitColor
@@ -1451,6 +1490,874 @@ function Do-SpeedOokla {
     Update-Progress 100
     Flush-LogBuffer; Pump-UI
 }
+
+
+function Do-Traceroute {
+    if ($script:isClosing -or (Test-Cancel)) { return }
+
+    # Popup per inserire target (altezza aumentata a 170)
+    $inputForm = New-Object System.Windows.Forms.Form
+    $inputForm.Text = "Traceroute - Inserisci destinazione"
+    $inputForm.Size = New-Object System.Drawing.Size(400, 180)
+    $inputForm.StartPosition = "CenterParent"
+    $inputForm.FormBorderStyle = "FixedDialog"
+    $inputForm.MaximizeBox = $false
+    $inputForm.MinimizeBox = $false
+    $inputForm.BackColor = $bgColor
+    $inputForm.ForeColor = $fgColor
+    $inputForm.TopMost = $true
+
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = "Inserisci indirizzo IP o dominio da tracciare:"
+    $lbl.Location = New-Object System.Drawing.Point(20, 20)
+    $lbl.Size = New-Object System.Drawing.Size(340, 22)
+    $lbl.ForeColor = $fgColor
+    $inputForm.Controls.Add($lbl)
+
+    $txtTarget = New-Object System.Windows.Forms.TextBox
+    $txtTarget.Text = "8.8.8.8"
+    $txtTarget.Location = New-Object System.Drawing.Point(20, 50)
+    $txtTarget.Size = New-Object System.Drawing.Size(340, 26)
+    $txtTarget.Font = New-Object System.Drawing.Font("Consolas", 12)
+    $txtTarget.BackColor = $bgCard
+    $txtTarget.ForeColor = $fgColor
+    $inputForm.Controls.Add($txtTarget)
+
+    $btnOK = New-Object System.Windows.Forms.Button
+    $btnOK.Text = "Avvia"
+    $btnOK.Location = New-Object System.Drawing.Point(20, 95)
+    $btnOK.Size = New-Object System.Drawing.Size(100, 32)
+    $btnOK.BackColor = $accentColor
+    $btnOK.ForeColor = [System.Drawing.Color]::White
+    $btnOK.FlatStyle = "Flat"
+    $btnOK.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $inputForm.Controls.Add($btnOK)
+    $inputForm.AcceptButton = $btnOK
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = "Annulla"
+    $btnCancel.Location = New-Object System.Drawing.Point(140, 95)
+    $btnCancel.Size = New-Object System.Drawing.Size(100, 32)
+    $btnCancel.BackColor = $exitColor
+    $btnCancel.ForeColor = [System.Drawing.Color]::White
+    $btnCancel.FlatStyle = "Flat"
+    $btnCancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $inputForm.Controls.Add($btnCancel)
+    $inputForm.CancelButton = $btnCancel
+
+    $result = $inputForm.ShowDialog($script:form)
+    if ($result -ne [System.Windows.Forms.DialogResult]::OK) {
+        Log "[i] Traceroute annullato."
+        Update-Progress 100
+        return
+    }
+
+    $target = $txtTarget.Text.Trim()
+    if ([string]::IsNullOrEmpty($target)) {
+        Log "[X] Nessun target inserito."
+        Update-Progress 100
+        return
+    }
+
+    # --- Esegui traceroute con output in tempo reale ---
+    Update-Status "[...] Traceroute verso $target..." $networkColor
+    Flush-LogBuffer; Pump-UI
+
+    Log ""; Log "==============================================================================================="
+    Log "[>] TRACEROUTE VERSO $target"
+    Log "==============================================================================================="
+
+    # Usa Run-ProcessRealtime per mostrare l'output in tempo reale
+    Run-ProcessRealtime "tracert" $target "Traceroute verso $target" 0 100
+
+    Log "==============================================================================================="; Log ""
+    Update-Progress 100
+    Update-Status "[OK] Traceroute completato" $successColor
+    Flush-LogBuffer; Pump-UI
+}
+
+function Do-ChangeDNS {
+    if ($script:isClosing -or (Test-Cancel)) { return }
+    if (-not $isAdmin) {
+        Log "[X] Per cambiare i DNS servono privilegi amministrativi."
+        Update-Status "[!] Admin richiesto" $warningColor
+        Flush-LogBuffer; Pump-UI
+        Update-Progress 100
+        return
+    }
+
+    # --- Popup per selezionare DNS ---
+    $inputForm = New-Object System.Windows.Forms.Form
+    $inputForm.Text = "Cambia Server DNS"
+    $inputForm.Size = New-Object System.Drawing.Size(450, 280)
+    $inputForm.StartPosition = "CenterParent"
+    $inputForm.FormBorderStyle = "FixedDialog"
+    $inputForm.MaximizeBox = $false
+    $inputForm.MinimizeBox = $false
+    $inputForm.BackColor = $bgColor
+    $inputForm.ForeColor = $fgColor
+    $inputForm.TopMost = $true
+
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = "Seleziona il provider DNS:"
+    $lbl.Location = New-Object System.Drawing.Point(20, 20)
+    $lbl.Size = New-Object System.Drawing.Size(390, 22)
+    $lbl.ForeColor = $fgColor
+    $inputForm.Controls.Add($lbl)
+
+    # --- ComboBox per i provider ---
+    $cmbProviders = New-Object System.Windows.Forms.ComboBox
+    $cmbProviders.Location = New-Object System.Drawing.Point(20, 50)
+    $cmbProviders.Size = New-Object System.Drawing.Size(390, 26)
+    $cmbProviders.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    $cmbProviders.Font = New-Object System.Drawing.Font("Segoe UI", 11)
+    $cmbProviders.BackColor = $bgCard
+    $cmbProviders.ForeColor = $fgColor
+    $cmbProviders.Items.AddRange(@(
+        "Google DNS (8.8.8.8, 8.8.4.4)",
+        "Cloudflare DNS (1.1.1.1, 1.0.0.1)",
+        "OpenDNS (208.67.222.222, 208.67.220.220)",
+        "Quad9 (9.9.9.9, 149.112.112.112)",
+        "Personalizzato (inserisci manualmente)"
+    ))
+    $cmbProviders.SelectedIndex = 0
+    $inputForm.Controls.Add($cmbProviders)
+
+    # --- Campi per DNS personalizzato (inizialmente nascosti) ---
+    $lblCustom = New-Object System.Windows.Forms.Label
+    $lblCustom.Text = "DNS Primario:"
+    $lblCustom.Location = New-Object System.Drawing.Point(20, 95)
+    $lblCustom.Size = New-Object System.Drawing.Size(150, 22)
+    $lblCustom.ForeColor = $fgColor
+    $lblCustom.Visible = $false
+    $inputForm.Controls.Add($lblCustom)
+
+    $txtPrimary = New-Object System.Windows.Forms.TextBox
+    $txtPrimary.Location = New-Object System.Drawing.Point(20, 125)
+    $txtPrimary.Size = New-Object System.Drawing.Size(180, 26)
+    $txtPrimary.Font = New-Object System.Drawing.Font("Consolas", 12)
+    $txtPrimary.BackColor = $bgCard
+    $txtPrimary.ForeColor = $fgColor
+    $txtPrimary.Visible = $false
+    $inputForm.Controls.Add($txtPrimary)
+
+    $lblCustom2 = New-Object System.Windows.Forms.Label
+    $lblCustom2.Text = "DNS Secondario:"
+    $lblCustom2.Location = New-Object System.Drawing.Point(220, 95)
+    $lblCustom2.Size = New-Object System.Drawing.Size(150, 22)
+    $lblCustom2.ForeColor = $fgColor
+    $lblCustom2.Visible = $false
+    $inputForm.Controls.Add($lblCustom2)
+
+    $txtSecondary = New-Object System.Windows.Forms.TextBox
+    $txtSecondary.Location = New-Object System.Drawing.Point(220, 125)
+    $txtSecondary.Size = New-Object System.Drawing.Size(180, 26)
+    $txtSecondary.Font = New-Object System.Drawing.Font("Consolas", 12)
+    $txtSecondary.BackColor = $bgCard
+    $txtSecondary.ForeColor = $fgColor
+    $txtSecondary.Visible = $false
+    $inputForm.Controls.Add($txtSecondary)
+
+    # --- Mostra/nascondi campi personalizzati in base alla selezione ---
+    $cmbProviders.Add_SelectedIndexChanged({
+        if ($cmbProviders.SelectedItem -eq "Personalizzato (inserisci manualmente)") {
+            $lblCustom.Visible = $true
+            $txtPrimary.Visible = $true
+            $lblCustom2.Visible = $true
+            $txtSecondary.Visible = $true
+            $inputForm.Height = 330
+        } else {
+            $lblCustom.Visible = $false
+            $txtPrimary.Visible = $false
+            $lblCustom2.Visible = $false
+            $txtSecondary.Visible = $false
+            $inputForm.Height = 280
+        }
+    })
+
+    $btnOK = New-Object System.Windows.Forms.Button
+    $btnOK.Text = "Applica"
+    $btnOK.Location = New-Object System.Drawing.Point(20, 175)
+    $btnOK.Size = New-Object System.Drawing.Size(100, 32)
+    $btnOK.BackColor = $accentColor
+    $btnOK.ForeColor = [System.Drawing.Color]::White
+    $btnOK.FlatStyle = "Flat"
+    $btnOK.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $inputForm.Controls.Add($btnOK)
+    $inputForm.AcceptButton = $btnOK
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = "Annulla"
+    $btnCancel.Location = New-Object System.Drawing.Point(140, 175)
+    $btnCancel.Size = New-Object System.Drawing.Size(100, 32)
+    $btnCancel.BackColor = $exitColor
+    $btnCancel.ForeColor = [System.Drawing.Color]::White
+    $btnCancel.FlatStyle = "Flat"
+    $btnCancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $inputForm.Controls.Add($btnCancel)
+    $inputForm.CancelButton = $btnCancel
+
+    $result = $inputForm.ShowDialog($script:form)
+    if ($result -ne [System.Windows.Forms.DialogResult]::OK) {
+        Log "[i] Cambio DNS annullato."
+        Update-Progress 100
+        return
+    }
+
+    # --- Determina DNS da impostare ---
+    $selected = $cmbProviders.SelectedItem
+    $dnsPrimary = $null
+    $dnsSecondary = $null
+
+    if ($selected -eq "Google DNS (8.8.8.8, 8.8.4.4)") {
+        $dnsPrimary = "8.8.8.8"; $dnsSecondary = "8.8.4.4"
+    } elseif ($selected -eq "Cloudflare DNS (1.1.1.1, 1.0.0.1)") {
+        $dnsPrimary = "1.1.1.1"; $dnsSecondary = "1.0.0.1"
+    } elseif ($selected -eq "OpenDNS (208.67.222.222, 208.67.220.220)") {
+        $dnsPrimary = "208.67.222.222"; $dnsSecondary = "208.67.220.220"
+    } elseif ($selected -eq "Quad9 (9.9.9.9, 149.112.112.112)") {
+        $dnsPrimary = "9.9.9.9"; $dnsSecondary = "149.112.112.112"
+    } elseif ($selected -eq "Personalizzato (inserisci manualmente)") {
+        $dnsPrimary = $txtPrimary.Text.Trim()
+        $dnsSecondary = $txtSecondary.Text.Trim()
+        if (-not $dnsPrimary) {
+            Log "[X] DNS primario non inserito."
+            Update-Progress 100
+            return
+        }
+        # Validazione base (IP)
+        if ($dnsPrimary -notmatch '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$') {
+            Log "[X] DNS primario non valido: $dnsPrimary"
+            Update-Progress 100
+            return
+        }
+        if ($dnsSecondary -and $dnsSecondary -notmatch '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$') {
+            Log "[X] DNS secondario non valido: $dnsSecondary"
+            Update-Progress 100
+            return
+        }
+    }
+
+    # --- Applica DNS a tutte le schede di rete attive ---
+    Update-Status "[...] Cambio DNS in corso..." $networkColor
+    Flush-LogBuffer; Pump-UI
+
+    Log ""; Log "==============================================================================================="
+    Log "[>] CAMBIO DNS"
+    Log "==============================================================================================="
+    Log "[i] DNS Primario    : $dnsPrimary"
+    Log "[i] DNS Secondario  : $dnsSecondary"
+
+    try {
+        # Ottieni le schede di rete con indirizzo IP (escludi quelle virtuali o disconnesse)
+        $adapters = Get-NetAdapter -Physical | Where-Object { $_.Status -eq "Up" }
+        if (-not $adapters) {
+            Log "[X] Nessuna scheda di rete attiva trovata."
+            Update-Status "[X] Nessuna scheda" $exitColor
+            Update-Progress 100
+            return
+        }
+
+        $modified = 0
+        foreach ($adapter in $adapters) {
+            try {
+                # Imposta i DNS
+                if ($dnsPrimary) {
+                    Set-DnsClientServerAddress -InterfaceIndex $adapter.InterfaceIndex -ServerAddresses @($dnsPrimary, $dnsSecondary) -ErrorAction Stop
+                    Log "[OK] $($adapter.Name): DNS impostati a $dnsPrimary, $dnsSecondary"
+                    $modified++
+                }
+            } catch {
+                Log "[!] $($adapter.Name): $($_.Exception.Message)"
+            }
+            Pump-UI
+        }
+
+        if ($modified -gt 0) {
+            Log "[OK] DNS cambiati su $modified scheda(e)."
+
+            # Flush DNS per rendere effettive le modifiche
+            Log "[>] Flush DNS..."
+            & ipconfig /flushdns 2>&1 | Out-Null
+            Log "[OK] Cache DNS svuotata."
+        } else {
+            Log "[!] Nessuna scheda modificata."
+        }
+    } catch {
+        Log "[X] Errore durante il cambio DNS: $($_.Exception.Message)"
+        Update-Status "[X] Errore" $exitColor
+    }
+
+    Log "==============================================================================================="; Log ""
+    Update-Progress 100
+    Update-Status "[OK] DNS cambiati" $successColor
+    Flush-LogBuffer; Pump-UI
+}
+
+
+
+function Do-Whois {
+    if ($script:isClosing -or (Test-Cancel)) { return }
+
+    # --- Popup per inserire target ---
+    $inputForm = New-Object System.Windows.Forms.Form
+    $inputForm.Text = "Whois - Inserisci IP o dominio"
+    $inputForm.Size = New-Object System.Drawing.Size(420, 180)
+    $inputForm.StartPosition = "CenterParent"
+    $inputForm.FormBorderStyle = "FixedDialog"
+    $inputForm.MaximizeBox = $false
+    $inputForm.MinimizeBox = $false
+    $inputForm.BackColor = $bgColor
+    $inputForm.ForeColor = $fgColor
+    $inputForm.TopMost = $true
+
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = "Inserisci indirizzo IP o dominio:"
+    $lbl.Location = New-Object System.Drawing.Point(20, 20)
+    $lbl.Size = New-Object System.Drawing.Size(360, 22)
+    $lbl.ForeColor = $fgColor
+    $inputForm.Controls.Add($lbl)
+
+    $txtTarget = New-Object System.Windows.Forms.TextBox
+    $txtTarget.Text = "google.com"
+    $txtTarget.Location = New-Object System.Drawing.Point(20, 50)
+    $txtTarget.Size = New-Object System.Drawing.Size(360, 26)
+    $txtTarget.Font = New-Object System.Drawing.Font("Consolas", 12)
+    $txtTarget.BackColor = $bgCard
+    $txtTarget.ForeColor = $fgColor
+    $inputForm.Controls.Add($txtTarget)
+
+    $btnOK = New-Object System.Windows.Forms.Button
+    $btnOK.Text = "Cerca"
+    $btnOK.Location = New-Object System.Drawing.Point(20, 90)
+    $btnOK.Size = New-Object System.Drawing.Size(100, 32)
+    $btnOK.BackColor = $accentColor
+    $btnOK.ForeColor = [System.Drawing.Color]::White
+    $btnOK.FlatStyle = "Flat"
+    $btnOK.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $inputForm.Controls.Add($btnOK)
+    $inputForm.AcceptButton = $btnOK
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = "Annulla"
+    $btnCancel.Location = New-Object System.Drawing.Point(140, 90)
+    $btnCancel.Size = New-Object System.Drawing.Size(100, 32)
+    $btnCancel.BackColor = $exitColor
+    $btnCancel.ForeColor = [System.Drawing.Color]::White
+    $btnCancel.FlatStyle = "Flat"
+    $btnCancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $inputForm.Controls.Add($btnCancel)
+    $inputForm.CancelButton = $btnCancel
+
+    $result = $inputForm.ShowDialog($script:form)
+    if ($result -ne [System.Windows.Forms.DialogResult]::OK) {
+        Log "[i] Whois annullato."
+        Update-Progress 100
+        return
+    }
+
+    $target = $txtTarget.Text.Trim()
+    if ([string]::IsNullOrEmpty($target)) {
+        Log "[X] Nessun target inserito."
+        Update-Progress 100
+        return
+    }
+
+    # --- Esegui whois ---
+    Update-Status "[...] Whois su $target..." $networkColor
+    Flush-LogBuffer; Pump-UI
+
+    Log ""; Log "==============================================================================================="
+    Log "[>] WHOIS - $target"
+    Log "==============================================================================================="
+
+    $whoisSuccess = $false
+    $isIP = $target -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$'
+
+    # --- Se è un IP, vai direttamente a ipinfo.io ---
+    if ($isIP) {
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            $url = "https://ipinfo.io/$target/json"
+            $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 10 -ErrorAction Stop
+
+            if ($response -and $response.ip) {
+                $whoisSuccess = $true
+                Log ""
+                Log " [OK] Informazioni su $target (IP)"
+                Log " ─────────────────────────────────────────────"
+                if ($response.ip) { Log " IP           : $($response.ip)" }
+                if ($response.hostname) { Log " Hostname     : $($response.hostname)" }
+                if ($response.city) { Log " Città        : $($response.city)" }
+                if ($response.region) { Log " Regione      : $($response.region)" }
+                if ($response.country) { Log " Paese        : $($response.country)" }
+                if ($response.loc) { Log " Coordinate   : $($response.loc)" }
+                if ($response.org) { Log " Organizzazione: $($response.org)" }
+                if ($response.postal) { Log " CAP          : $($response.postal)" }
+                if ($response.timezone) { Log " Timezone     : $($response.timezone)" }
+                if ($response.asn) { Log " ASN          : $($response.asn)" }
+                if ($response.abuse) { 
+                    Log " Abuse Email  : $($response.abuse.email)" 
+                    Log " Abuse Phone  : $($response.abuse.phone)"
+                }
+                Log " ─────────────────────────────────────────────"
+                Log ""
+            }
+        } catch {
+            Log "[X] Errore durante la richiesta per l'IP: $($_.Exception.Message)"
+        }
+    }
+
+    # --- Se NON è un IP, prova RDAP per il dominio ---
+    if (-not $whoisSuccess -and -not $isIP) {
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+            # Tenta RDAP
+            $bootstrapUrl = "https://data.iana.org/rdap/dns.json"
+            $bootstrap = Invoke-RestMethod -Uri $bootstrapUrl -Method Get -TimeoutSec 10 -ErrorAction Stop
+
+            $parts = $target -split '\.'
+            $tld = $parts[-1]
+
+            $rdapServer = $null
+            foreach ($service in $bootstrap.services) {
+                $tlds = $service[0]
+                $urls = $service[1]
+                if ($tlds -contains $tld) {
+                    $rdapServer = $urls[0]
+                    break
+                }
+            }
+
+            # Fallback hardcodato
+            if (-not $rdapServer) {
+                $fallbackServers = @{
+                    "com" = "https://rdap.verisign.com/com/v1/"
+                    "net" = "https://rdap.verisign.com/net/v1/"
+                    "org" = "https://rdap.publicinterestregistry.org/v1/"
+                    "it"  = "https://rdap.nic.it/"
+                    "uk"  = "https://rdap.nominet.uk/"
+                    "eu"  = "https://rdap.eu/"
+                    "fr"  = "https://rdap.nic.fr/"
+                    "de"  = "https://rdap.denic.de/"
+                    "nl"  = "https://rdap.sidn.nl/"
+                    "ch"  = "https://rdap.nic.ch/"
+                    "be"  = "https://rdap.dns.be/"
+                }
+                if ($fallbackServers.ContainsKey($tld)) {
+                    $rdapServer = $fallbackServers[$tld]
+                    Log "[OK] Server RDAP da fallback: $rdapServer"
+                }
+            }
+
+            if ($rdapServer) {
+                Log "[>] Tentativo RDAP: $rdapServer"
+                if (-not $rdapServer.EndsWith("/")) { $rdapServer += "/" }
+                $rdapUrl = "$rdapServer" + "domain/$target"
+
+                $response = Invoke-RestMethod -Uri $rdapUrl -Method Get -TimeoutSec 15 -ErrorAction Stop
+
+                # Se arriviamo qui, RDAP ha funzionato
+                $whoisSuccess = $true
+                Log ""
+                Log " [OK] Informazioni su $target (RDAP)"
+                Log " ─────────────────────────────────────────────"
+                if ($response.rdapConformance) { Log " Protocollo   : RDAP" }
+                if ($response.objectClassName) { Log " Tipo         : $($response.objectClassName)" }
+                if ($response.handle) { Log " Handle       : $($response.handle)" }
+                if ($response.ldhName) { Log " Dominio      : $($response.ldhName)" }
+                if ($response.events) {
+                    foreach ($event in $response.events) {
+                        $date = $event.eventDate -replace 'T.*$', ''
+                        if ($event.eventAction -eq "registration") { Log " Creato il    : $date" }
+                        if ($event.eventAction -eq "expiration") { Log " Scade il     : $date" }
+                        if ($event.eventAction -eq "last changed") { Log " Modificato il: $date" }
+                    }
+                }
+                if ($response.nameservers) {
+                    $ns = ($response.nameservers | ForEach-Object { $_.ldhName }) -join ", "
+                    Log " Name Server  : $ns"
+                }
+                if ($response.entities) {
+                    foreach ($entity in $response.entities) {
+                        $roles = $entity.roles -join ", "
+                        if ($roles) {
+                            Log " Ruolo        : $roles"
+                            if ($entity.fn) { Log "   Nome        : $($entity.fn)" }
+                            if ($entity.org) { Log "   Organizzazione: $($entity.org)" }
+                            if ($entity.email) { Log "   Email       : $($entity.email)" }
+                            if ($entity.tel) { Log "   Telefono    : $($entity.tel)" }
+                        }
+                    }
+                }
+                if ($response.links) {
+                    foreach ($link in $response.links) {
+                        if ($link.rel -eq "self") { Log " Link RDAP    : $($link.href)" }
+                        if ($link.rel -eq "alternate" -or $link.rel -eq "related") { Log " Link         : $($link.href)" }
+                    }
+                }
+                Log " ─────────────────────────────────────────────"
+                Log ""
+            }
+        } catch {
+            # RDAP fallito, passiamo al fallback con risoluzione IP
+            if (-not $whoisSuccess) {
+                Log "[!] RDAP non disponibile, risolvo IP e provo con ipinfo.io..."
+            }
+        }
+    }
+
+    # --- Fallback: risolvi il dominio in IP e usa ipinfo.io ---
+    if (-not $whoisSuccess -and -not $isIP) {
+        try {
+            Log "[>] Risoluzione IP del dominio..."
+            
+            # Usa nslookup per risolvere l'IP
+            $nslookup = & nslookup $target 2>&1
+            $ipLines = $nslookup | Select-String -Pattern "Addresses:|Address:" | Select-Object -Last 1
+            
+            if ($ipLines) {
+                # Estrai l'IP (prende l'ultimo IP nella riga)
+                $ipMatch = [regex]::Match($ipLines, '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
+                if ($ipMatch.Success) {
+                    $resolvedIP = $ipMatch.Value
+                    Log "[OK] IP risolto: $resolvedIP"
+                    Log "[>] Whois sull'IP..."
+
+                    # Whois sull'IP con ipinfo.io
+                    $url = "https://ipinfo.io/$resolvedIP/json"
+                    $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 10 -ErrorAction Stop
+
+                    if ($response -and $response.ip) {
+                        $whoisSuccess = $true
+                        Log ""
+                        Log " [OK] Informazioni su $target (tramite IP $resolvedIP)"
+                        Log " ─────────────────────────────────────────────"
+                        Log " Dominio      : $target"
+                        if ($response.ip) { Log " IP           : $($response.ip)" }
+                        if ($response.hostname) { Log " Hostname     : $($response.hostname)" }
+                        if ($response.city) { Log " Città        : $($response.city)" }
+                        if ($response.region) { Log " Regione      : $($response.region)" }
+                        if ($response.country) { Log " Paese        : $($response.country)" }
+                        if ($response.loc) { Log " Coordinate   : $($response.loc)" }
+                        if ($response.org) { Log " Organizzazione: $($response.org)" }
+                        if ($response.postal) { Log " CAP          : $($response.postal)" }
+                        if ($response.timezone) { Log " Timezone     : $($response.timezone)" }
+                        if ($response.asn) { Log " ASN          : $($response.asn)" }
+                        if ($response.abuse) { 
+                            Log " Abuse Email  : $($response.abuse.email)" 
+                            Log " Abuse Phone  : $($response.abuse.phone)"
+                        }
+                        Log " ─────────────────────────────────────────────"
+                        Log ""
+                    }
+                } else {
+                    Log "[X] Impossibile risolvere l'IP del dominio."
+                }
+            } else {
+                Log "[X] Dominio non risolvibile (non esiste o DNS non risponde)."
+            }
+        } catch {
+            Log "[X] Errore durante la risoluzione IP: $($_.Exception.Message)"
+        }
+    }
+
+    if (-not $whoisSuccess) {
+        Log "[X] Nessuna informazione disponibile per '$target'."
+        Log "[i] Verifica che il dominio/IP esista e che la connessione Internet sia attiva."
+        Update-Status "[X] Errore whois" $exitColor
+    }
+
+    Log "==============================================================================================="; Log ""
+    Update-Progress 100
+    Update-Status "[OK] Whois completato" $successColor
+    Flush-LogBuffer; Pump-UI
+}
+
+
+function Do-BlacklistCheck {
+    if ($script:isClosing -or (Test-Cancel)) { return }
+
+    # --- Helper interno per scrivere con colori parziali nella RichTextBox ---
+    function Log-Color {
+        param(
+            [string]$TextBefore,
+            [string]$TextToColor,
+            [string]$TextAfter = "",
+            [System.Drawing.Color]$Color
+        )
+        # >>> ATTENZIONE: Cambia '$script:logBox' con il nome della tua variabile RichTextBox <<<
+        $rtb = $script:logBox 
+        
+        if ($rtb -and $rtb.GetType().Name -eq "RichTextBox") {
+            $rtb.AppendText($TextBefore)
+            $startIdx = $rtb.TextLength
+            $rtb.AppendText($TextToColor)
+            $rtb.Select($startIdx, $TextToColor.Length)
+            $rtb.SelectionColor = $Color
+            $rtb.SelectionLength = 0
+            $rtb.SelectionColor = $fgColor
+            $rtb.AppendText($TextAfter + "`r`n")
+            $rtb.ScrollToCaret()
+        } else {
+            Log "$TextBefore$TextToColor$TextAfter"
+        }
+    }
+
+    # --- Popup per inserire target ---
+    $inputForm = New-Object System.Windows.Forms.Form
+    $inputForm.Text = "Blacklist Check - Inserisci dominio o IP"
+    $inputForm.Size = New-Object System.Drawing.Size(420, 180)
+    $inputForm.StartPosition = "CenterParent"
+    $inputForm.FormBorderStyle = "FixedDialog"
+    $inputForm.MaximizeBox = $false
+    $inputForm.MinimizeBox = $false
+    $inputForm.BackColor = $bgColor
+    $inputForm.ForeColor = $fgColor
+    $inputForm.TopMost = $true
+
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = "Inserisci dominio o IP da verificare:"
+    $lbl.Location = New-Object System.Drawing.Point(20, 20)
+    $lbl.Size = New-Object System.Drawing.Size(360, 22)
+    $lbl.ForeColor = $fgColor
+    $inputForm.Controls.Add($lbl)
+
+    $txtTarget = New-Object System.Windows.Forms.TextBox
+    $txtTarget.Text = "example.com"
+    $txtTarget.Location = New-Object System.Drawing.Point(20, 50)
+    $txtTarget.Size = New-Object System.Drawing.Size(360, 26)
+    $txtTarget.Font = New-Object System.Drawing.Font("Consolas", 12)
+    $txtTarget.BackColor = $bgCard
+    $txtTarget.ForeColor = $fgColor
+    $inputForm.Controls.Add($txtTarget)
+
+    $btnOK = New-Object System.Windows.Forms.Button
+    $btnOK.Text = "Verifica"
+    $btnOK.Location = New-Object System.Drawing.Point(20, 90)
+    $btnOK.Size = New-Object System.Drawing.Size(100, 32)
+    $btnOK.BackColor = $accentColor
+    $btnOK.ForeColor = [System.Drawing.Color]::White
+    $btnOK.FlatStyle = "Flat"
+    $btnOK.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $inputForm.Controls.Add($btnOK)
+    $inputForm.AcceptButton = $btnOK
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = "Annulla"
+    $btnCancel.Location = New-Object System.Drawing.Point(140, 90)
+    $btnCancel.Size = New-Object System.Drawing.Size(100, 32)
+    $btnCancel.BackColor = $exitColor
+    $btnCancel.ForeColor = [System.Drawing.Color]::White
+    $btnCancel.FlatStyle = "Flat"
+    $btnCancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $inputForm.Controls.Add($btnCancel)
+    $inputForm.CancelButton = $btnCancel
+
+    $result = $inputForm.ShowDialog($script:form)
+    if ($result -ne [System.Windows.Forms.DialogResult]::OK) {
+        Log "[i] Verifica blacklist annullata."
+        Update-Progress 100
+        return
+    }
+
+    $target = $txtTarget.Text.Trim()
+    if ([string]::IsNullOrEmpty($target)) {
+        Log "[X] Nessun target inserito."
+        Update-Progress 100
+        return
+    }
+
+    Update-Status "[...] Verifica blacklist per $target..." $securityColor
+    Flush-LogBuffer; Pump-UI
+
+    Log ""; Log "==============================================================================================="
+    Log "[>] BLACKLIST CHECK Attendere - $target"
+    Log "==============================================================================================="
+
+    # --- INSTALLAZIONE MODULO ---
+    $requiredModules = @("PSBlackListChecker")
+    try {
+        $repo = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
+        if ($repo -and $repo.InstallationPolicy -ne "Trusted") { Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction Stop }
+    } catch { Log "[!] Impossibile impostare PSGallery come trusted." }
+
+    foreach ($moduleName in $requiredModules) {
+        $module = Get-Module -Name $moduleName -ListAvailable -ErrorAction SilentlyContinue
+        if (-not $module) {
+            Log "[!] Installazione $moduleName..."
+            try { Install-Module -Name $moduleName -Scope CurrentUser -Force -AcceptLicense -SkipPublisherCheck -ErrorAction Stop } catch { Log "[X] Installazione fallita: $($_.Exception.Message)" }
+        }
+    }
+
+    # --- Risolvi l'IP ---
+    $isIP = $target -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$'
+    if ($isIP) { $ipToCheck = $target } 
+    else {
+        try {
+            $dnsResult = Resolve-DnsName -Name $target -Type A -ErrorAction Stop
+            $ipToCheck = if ($dnsResult -is [System.Array]) { $dnsResult[0].IPAddress } else { $dnsResult.IPAddress }
+        } catch {
+            Log "[X] Errore risoluzione DNS: $($_.Exception.Message)"
+            Update-Status "[X] Errore DNS" $exitColor; Update-Progress 100; return
+        }
+    }
+
+    # =====================================================================
+    # SEZIONE 1: PSBlackListChecker
+    # =====================================================================
+    $moduleSuccess = $false; $moduleListCount = 0; $moduleListed = 0
+    $module = Get-Module -Name PSBlackListChecker -ListAvailable -ErrorAction SilentlyContinue
+    
+    if ($module) {
+        Log ""; Log " [📋] CONTROLLO CON PSBlackListChecker"; Log " ─────────────────────────────────────────────────────────────"
+        try {
+            Import-Module PSBlackListChecker -Force -ErrorAction Stop
+            $results = Search-BlackList -IP $ipToCheck -ReturnAll -ErrorAction Stop
+            if ($null -ne $results -and $results.Count -gt 0) {
+                $moduleListCount = $results.Count
+                foreach ($entry in ($results | Sort-Object -Property IsListed -Descending)) {
+                    $listName = if ($entry.BlackList) { $entry.BlackList } else { $entry.BlacklistName }
+                    $isListed = [bool]$entry.IsListed
+                    if ($isListed) { Log-Color -TextBefore " [⚠️] $($listName.Trim()) : " -TextToColor "SEGNALATO" -Color ([System.Drawing.Color]::Red); $moduleListed++ }
+                    else { Log-Color -TextBefore " [✅] $($listName.Trim()) : " -TextToColor "PULITO" -Color ([System.Drawing.Color]::Green) }
+                    Pump-UI
+                }
+                $moduleSuccess = $true
+            }
+        } catch { Log "[!] Errore PSBlackListChecker: $($_.Exception.Message)" }
+    }
+
+    # =====================================================================
+    # SEZIONE 2: CONTROLLO MANUALE ESTESO
+    # =====================================================================
+    Log ""; Log " [📋] CONTROLLO MANUALE ESTESO (Top 16)"; Log " ─────────────────────────────────────────────────────────────"
+    $fallbackLists = @(
+        @{Name="Spamhaus ZEN"; QuerySuffix="zen.spamhaus.org"}, @{Name="Spamhaus DBL"; QuerySuffix="dbl.spamhaus.org"},
+        @{Name="SpamCop"; QuerySuffix="bl.spamcop.net"}, @{Name="SORBS"; QuerySuffix="dnsbl.sorbs.net"},
+        @{Name="Barracuda"; QuerySuffix="b.barracudacentral.org"}, @{Name="UCEPROTECT L1"; QuerySuffix="l1.uceprotect.net"},
+        @{Name="UCEPROTECT L2"; QuerySuffix="l2.uceprotect.net"}, @{Name="SANS EDU"; QuerySuffix="isc.sans.edu"},
+        @{Name="DNSBL FR"; QuerySuffix="dnsbl.spam-rbl.fr"}, @{Name="Mailspike BL"; QuerySuffix="bl.mailspike.net"},
+        @{Name="RATS Dyna"; QuerySuffix="rats-dyn.spamrats.com"}, @{Name="RATS Spam"; QuerySuffix="spam.spamrats.com"},
+        @{Name="SEM Black"; QuerySuffix="bl.semblack.com"}, @{Name="Abuse.ro"; QuerySuffix="abuse.ro"},
+        @{Name="DRONE BL"; QuerySuffix="dnsbl.dronebl.org"}, @{Name="Nix Spam"; QuerySuffix="ix.dnsbl.manitu.net"}
+    )
+    $ipInvertito = ($ipToCheck -split '\.')[-1..0] -join '.'; $manualListed = 0; $manualCount = $fallbackLists.Count
+
+    foreach ($list in $fallbackLists) {
+        try {
+            $null = Resolve-DnsName -Name "$ipInvertito.$($list.QuerySuffix)" -Type A -ErrorAction Stop -DnsOnly -QuickTimeout
+            Log-Color -TextBefore " [⚠️] $($list.Name) : " -TextToColor "SEGNALATO" -Color ([System.Drawing.Color]::Red); $manualListed++
+        } catch { Log-Color -TextBefore " [✅] $($list.Name) : " -TextToColor "PULITO" -Color ([System.Drawing.Color]::Green) }
+        Pump-UI
+    }
+
+    # =====================================================================
+    # SEZIONE 3: CONTROLLO WEB MULTIRBL.VALLI.ORG (Super Robusto)
+    # =====================================================================
+    Log ""; Log " [🌐] CONTROLLO WEB SU MULTIRBL.VALLI.ORG"; Log " ─────────────────────────────────────────────────────────────"
+    Log "[>] Download e analisi pagina web in corso (15-30 sec)..."
+    Flush-LogBuffer; Pump-UI
+
+    $webListed = 0; $webCount = 0
+    try {
+        $uri = "https://multirbl.valli.org/lookup/$ipToCheck.html"
+        $headers = @{ 
+            "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" 
+            "Accept" = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            "Accept-Language" = "it-IT,it;q=0.8,en-US;q=0.5,en;q=0.3"
+        }
+        
+        $webResponse = Invoke-WebRequest -Uri $uri -Method Get -Headers $headers -TimeoutSec 60 -ErrorAction Stop
+        $htmlContent = $webResponse.Content
+
+        if ($htmlContent.Length -lt 5000) {
+            Log "[!] Risposta web troppo breve. Possibile blocco anti-bot o CAPTCHA."
+        } else {
+            # 1. REGEX PRINCIPALE (Tollerante a classi CSS multiple es. "class="rbl-listed other-class")
+            $regexOptions = [System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::Singleline
+            $regex = '<tr\s+class="[^"]*rbl-(?<Status>ok|listed)[^"]*"[^>]*>.*?<a[^>]*>(?<Name>[^<]+)</a>'
+            $matches = [regex]::Matches($htmlContent, $regex, $regexOptions)
+
+            if ($matches.Count -gt 0) {
+                Log " ─────────────────────────────────────────────────────────────"
+                foreach ($match in $matches) {
+                    $listName = $match.Groups["Name"].Value.Trim()
+                    $status = $match.Groups["Status"].Value.Trim().ToUpper()
+                    $webCount++
+
+                    if ($status -eq "LISTED") {
+                        Log-Color -TextBefore " [⚠️] $listName : " -TextToColor "SEGNALATO" -TextAfter " (da MultiRBL)" -Color ([System.Drawing.Color]::Red)
+                        $webListed++
+                    } else {
+                        Log-Color -TextBefore " [✅] $listName : " -TextToColor "PULITO" -Color ([System.Drawing.Color]::Green)
+                    }
+                    Pump-UI
+                }
+                Log " ─────────────────────────────────────────────────────────────"
+                Log " Riepilogo MultiRBL: $webListed SEGNALATI su $webCount liste"
+            } else {
+                # 2. PARSER FALLBACK (Se la struttura HTML è completamente cambiata)
+                Log "[!] Struttura standard non trovata. Tentativo con parser generico di emergenza..."
+                $rows = $htmlContent -split '<tr'
+                $fallbackListed = 0
+                $fallbackTotal = 0
+                
+                foreach ($row in $rows) {
+                    if ($row -match '<a[^>]*>([^<]+)</a>') {
+                        $linkText = $Matches[1].Trim()
+                        # Esclude link di navigazione del sito e considera solo i nomi plausibili
+                        if ($linkText.Length -gt 4 -and $linkText -notmatch '^(Home|About|Contact|Login|MultiRBL|Valli\.org|Donate)$') {
+                            $fallbackTotal++
+                            if ($row -match '\bLISTED\b') {
+                                Log-Color -TextBefore " [⚠️] $linkText : " -TextToColor "SEGNALATO" -TextAfter " (da MultiRBL)" -Color ([System.Drawing.Color]::Red)
+                                $fallbackListed++
+                            } else {
+                                Log-Color -TextBefore " [✅] $linkText : " -TextToColor "PULITO" -Color ([System.Drawing.Color]::Green)
+                            }
+                            Pump-UI
+                        }
+                    }
+                }
+                
+                if ($fallbackTotal -gt 0) {
+                    $webCount = $fallbackTotal
+                    $webListed = $fallbackListed
+                    Log " ─────────────────────────────────────────────────────────────"
+                    Log " Riepilogo MultiRBL: $webListed SEGNALATI su $webCount liste (tramite fallback)"
+                } else {
+                    Log "[!] Impossibile estrarre dati. Il sito potrebbe essere temporaneamente irraggiungibile o aver cambiato radicalmente layout."
+                }
+            }
+        }
+    } catch {
+        Log "[!] Errore durante la richiesta a MultiRBL: $($_.Exception.Message)"
+    }
+
+    # =====================================================================
+    # SEZIONE 4: RIEPILOGO FINALE TOTALE
+    # =====================================================================
+    $totalLists = $moduleListCount + $manualCount + $webCount
+    $totalListed = $moduleListed + $manualListed + $webListed
+
+    Log ""; Log " [📊] RIEPILOGO COMPLETO"
+    Log " ─────────────────────────────────────────────────────────────"
+    Log " Controlli PSBlackListChecker : $moduleListCount liste"
+    Log " Controlli manuali estesi     : $manualCount liste"
+    Log " Controlli Web (MultiRBL)     : $webCount liste"
+    Log " TOTALE LISTE CONTROLLATE     : $totalLists"
+    Log " TOTALE SEGNALAZIONI          : $totalListed"
+    Log " ─────────────────────────────────────────────────────────────"
+
+    if ($totalListed -gt 0) { Update-Status "[⚠️] $totalListed SEGNALAZIONI su $totalLists liste" $exitColor } 
+    else { Update-Status "[✅] PULITO (0 segnalazioni su $totalLists liste)" $successColor }
+
+    Log "==============================================================================================="; Log ""
+    Update-Progress 100; Flush-LogBuffer; Pump-UI
+}
+
+
 
 # ============================================================
 # BLOCCO 7 - FUNZIONI DI RIPARAZIONE
@@ -2145,8 +3052,12 @@ function Build-GUI {
 				@{Text="📡 Ping Test"; Action={Do-SpeedTest}; Tooltip="Esegue un test di latenza verso i server DNS principali"}
 				@{Text="🚀 Speed Internet"; Action={Do-SpeedInternet}; Tooltip="Esegue un test della velocità di connessione (Cloudflare)"}
 				@{Text="📊 Speed Ookla"; Action={Do-SpeedOokla}; Tooltip="Esegue un test di velocità approfondito con Ookla Speedtest (download, upload, latenza, jitter, packet loss)"}
+				@{Text="🗺️ Traceroute"; Action={Do-Traceroute}; Tooltip="Traccia il percorso dei pacchetti verso un IP o dominio.\nInserisci l'indirizzo di destinazione nel popup."}
+				@{Text="🔄 Cambia DNS"; Action={Do-ChangeDNS}; Tooltip="Modifica i server DNS delle schede di rete attive.\nScegli tra Google, Cloudflare, OpenDNS, Quad9 o personalizzato."}
+				@{Text="🔍 Whois"; Action={Do-Whois}; Tooltip="Mostra informazioni sul proprietario di un IP o dominio.\nInserisci l'indirizzo nel popup."}
+				@{Text="🚫 Blacklist Check"; Action={Do-BlacklistCheck}; Tooltip="Verifica se un dominio o IP è segnalato in blacklist (spam, malware, phishing).\nControlla su oltre 80 liste DNSBL tramite PSBlackListChecker (installazione automatica) o fallback su Spamhaus."}
 			)
-		}
+		}		
         "Riparazione" = @{
             Color = [System.Drawing.Color]::FromArgb(210, 150, 255)
             Items = @(
@@ -2160,6 +3071,7 @@ function Build-GUI {
                 @{Text="🛡️ Scan Defender"; Action={Do-SecurityScan}; Tooltip="Avvia una scansione rapida con Windows Defender"}
                 @{Text="📋 Event Log"; Action={Do-EventLogErrors}; Tooltip="Mostra gli ultimi errori critici del registro eventi (7gg)"}
                 @{Text="🏥 Health Check"; Action={Do-SystemHealth}; Tooltip="Verifica integrità critica del sistema"}
+				@{Text="🚫 Blacklist Check"; Action={Do-BlacklistCheck}; Tooltip="Verifica se un dominio o IP è segnalato in blacklist (spam, malware, phishing).\nControlla su oltre 80 liste DNSBL tramite PSBlackListChecker (installazione automatica) o fallback su Spamhaus."}
             )
         }
         "Diagnostica" = @{
@@ -2261,13 +3173,26 @@ function Build-GUI {
     $titleContainer.BackColor = $bgPanel
     $titleContainer.Padding = New-Object System.Windows.Forms.Padding(0, 0, 0, 0)
 
-    $titleLabel = New-Object System.Windows.Forms.Label
-    $titleLabel.Text = "⚡ MANUTENZIONE PRO MAX"
-    $titleLabel.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
-    $titleLabel.ForeColor = $fgColor
-    $titleLabel.AutoSize = $true
-    $titleLabel.TextAlign = "MiddleLeft"
-    $titleContainer.Controls.Add($titleLabel)
+	# Crea un LinkLabel invece di una Label
+	$titleLabel = New-Object System.Windows.Forms.LinkLabel
+	$titleLabel.Text = "⚡ MANUTENZIONE PRO MAX"
+	$titleLabel.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
+	$titleLabel.ForeColor = $fgColor
+	$titleLabel.AutoSize = $true
+	$titleLabel.TextAlign = "MiddleLeft"
+	$titleLabel.LinkColor = $fgColor           # Colore del link (bianco/azzurro)
+	$titleLabel.ActiveLinkColor = $accentColor # Colore quando cliccato
+	$titleLabel.VisitedLinkColor = $fgDim      # Colore dopo la visita
+	$titleLabel.LinkBehavior = "AlwaysUnderline" # Sottolineato sempre (o "HoverUnderline")
+	$titleLabel.Cursor = [System.Windows.Forms.Cursors]::Hand
+
+	# Aggiungi l'evento click
+	$titleLabel.Add_LinkClicked({
+		param($sender, $e)
+		Start-Process "https://github.com/pierpaolosanna/ManutenzioneProMax/archive/refs/heads/main.zip"
+	})
+
+	$titleContainer.Controls.Add($titleLabel)
 
     $adminBadge = New-Object System.Windows.Forms.Label
     $adminBadge.Font = New-Object System.Drawing.Font("Segoe UI", 7, [System.Drawing.FontStyle]::Bold)
@@ -2621,7 +3546,7 @@ function Build-GUI {
                 )
                 if ($response -eq "Yes") { Do-FullUpdate }
             } else {
-                Log "[OK] Script aggiornato (v$($script:currentVersion))"
+                Log "[OK] Script aggiornato da PeterS (v$($script:currentVersion))"
             }
         } catch {
             Log "[!] Impossibile verificare aggiornamenti: $($_.Exception.Message)"
