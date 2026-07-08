@@ -1249,6 +1249,103 @@ function Do-PrivacyAll {
 }
 
 
+# ---------- FUNZIONE ASSISTENZA REMOTA VNC ----------
+function Do-VNCViewer {
+    if($script:isClosing -or (Test-Cancel)){return}
+
+    # --- Popup per inserire IP ---
+    $inputForm = New-Object System.Windows.Forms.Form
+    $inputForm.Text = "Assistenza LAN - TightVNC"
+    $inputForm.Size = New-Object System.Drawing.Size(400, 180)
+    $inputForm.StartPosition = "CenterParent"
+    $inputForm.FormBorderStyle = "FixedDialog"
+    $inputForm.MaximizeBox = $false
+    $inputForm.MinimizeBox = $false
+    $inputForm.BackColor = $bgColor
+    $inputForm.ForeColor = $fgColor
+    $inputForm.TopMost = $true
+
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = "Inserisci l'IP del PC remoto:"
+    $lbl.Location = New-Object System.Drawing.Point(20, 20)
+    $lbl.Size = New-Object System.Drawing.Size(360, 22)
+    $lbl.ForeColor = $fgColor
+    $inputForm.Controls.Add($lbl)
+
+    $txtIP = New-Object System.Windows.Forms.TextBox
+    $txtIP.Text = "192.168.1."
+    $txtIP.Location = New-Object System.Drawing.Point(20, 50)
+    $txtIP.Size = New-Object System.Drawing.Size(340, 26)
+    $txtIP.Font = New-Object System.Drawing.Font("Consolas", 12)
+    $txtIP.BackColor = $bgCard
+    $txtIP.ForeColor = $fgColor
+    $inputForm.Controls.Add($txtIP)
+
+    $btnOK = New-Object System.Windows.Forms.Button
+    $btnOK.Text = "Connetti"
+    $btnOK.Location = New-Object System.Drawing.Point(20, 90)
+    $btnOK.Size = New-Object System.Drawing.Size(100, 32)
+    $btnOK.BackColor = $remoteColor # Rosso che hai nel Blocco 2
+    $btnOK.ForeColor = [System.Drawing.Color]::White
+    $btnOK.FlatStyle = "Flat"
+    $btnOK.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $inputForm.Controls.Add($btnOK)
+    $inputForm.AcceptButton = $btnOK
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = "Annulla"
+    $btnCancel.Location = New-Object System.Drawing.Point(140, 90)
+    $btnCancel.Size = New-Object System.Drawing.Size(100, 32)
+    $btnCancel.BackColor = $exitColor
+    $btnCancel.ForeColor = [System.Drawing.Color]::White
+    $btnCancel.FlatStyle = "Flat"
+    $btnCancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $inputForm.Controls.Add($btnCancel)
+    $inputForm.CancelButton = $btnCancel
+
+    $result = $inputForm.ShowDialog($script:form)
+    if ($result -ne [System.Windows.Forms.DialogResult]::OK) {
+        Log "[i] Assistenza remota annullata."
+        return
+    }
+
+    $targetIP = $txtIP.Text.Trim()
+    if ([string]::IsNullOrEmpty($targetIP)) {
+        Log "[X] Nessun IP inserito."
+        return
+    }
+
+    # --- Verifica ed Esecuzione ---
+    $vncPath = Join-Path $scriptRoot "lib\tvnviewer.exe"
+
+    if (-not (Test-Path $vncPath)) {
+        Log "[X] Impossibile trovare lib\tvnviewer.exe. Assicurati che il file sia nella cartella."
+        Update-Status "[X] tvnviewer.exe mancante" $exitColor
+        return
+    }
+
+    Log ""; Log "==============================================================================================="
+    Log "[>] AVVIO ASSISTENZA REMOTA (TightVNC Viewer)"
+    Log "==============================================================================================="
+    Log "[OK] Connessione a: $targetIP"
+    Log "[OK] Avvio eseguibile portatile..."
+    Update-Status "[...] Connessione a $targetIP..." $remoteColor
+    Flush-LogBuffer; Pump-UI
+
+    try {
+        # Lancia il viewer passandogli l'IP come argomento
+        Start-Process -FilePath $vncPath -ArgumentList "$targetIP"
+        Log "[OK] Viewer avviato con successo."
+        Update-Status "[OK] VNC in esecuzione" $successColor
+    } catch {
+        Log "[X] Errore durante l'avvio di TightVNC: $($_.Exception.Message)"
+        Update-Status "[X] Errore avvio VNC" $exitColor
+    }
+    Log "==============================================================================================="; Log ""
+    Update-Progress 100
+    Flush-LogBuffer; Pump-UI
+}
+
 # ============================================================
 # BLOCCO 5 - FUNZIONI DI PULIZIA
 # ============================================================
@@ -2125,7 +2222,7 @@ function Do-BlacklistCheck {
     $inputForm.Controls.Add($lbl)
 
     $txtTarget = New-Object System.Windows.Forms.TextBox
-    $txtTarget.Text = "example.com"
+    $txtTarget.Text = "google.com"
     $txtTarget.Location = New-Object System.Drawing.Point(20, 50)
     $txtTarget.Size = New-Object System.Drawing.Size(360, 26)
     $txtTarget.Font = New-Object System.Drawing.Font("Consolas", 12)
@@ -2176,20 +2273,179 @@ function Do-BlacklistCheck {
     Log "[>] BLACKLIST CHECK Attendere - $target"
     Log "==============================================================================================="
 
-    # --- INSTALLAZIONE MODULO ---
-    $requiredModules = @("PSBlackListChecker")
-    try {
-        $repo = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
-        if ($repo -and $repo.InstallationPolicy -ne "Trusted") { Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction Stop }
-    } catch { Log "[!] Impossibile impostare PSGallery come trusted." }
 
-    foreach ($moduleName in $requiredModules) {
-        $module = Get-Module -Name $moduleName -ListAvailable -ErrorAction SilentlyContinue
-        if (-not $module) {
-            Log "[!] Installazione $moduleName..."
-            try { Install-Module -Name $moduleName -Scope CurrentUser -Force -AcceptLicense -SkipPublisherCheck -ErrorAction Stop } catch { Log "[X] Installazione fallita: $($_.Exception.Message)" }
-        }
+
+
+
+# --- INSTALLAZIONE SILENT DEI MODULI (da PSGallery e GitHub) ---
+
+# 1. Imposta PSGallery come trusted
+try {
+    $repo = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
+    if ($repo -and $repo.InstallationPolicy -ne "Trusted") {
+        Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction Stop
+        Log "[OK] PSGallery impostata come trusted."
     }
+} catch { Log "[!] Impossibile impostare PSGallery come trusted." }
+
+# 2. PSWriteColor (da GitHub - dipendenza di PSBlackListChecker)
+$pswritecolorModule = Get-Module -Name PSWriteColor -ListAvailable -ErrorAction SilentlyContinue
+if (-not $pswritecolorModule) {
+    Log "[!] PSWriteColor non trovato. Installazione da GitHub..."
+    try {
+        $url = "https://github.com/EvotecIT/PSWriteColor/archive/refs/heads/master.zip"
+        $zipPath = "$env:TEMP\PSWriteColor.zip"
+        Log "[DL] Download PSWriteColor da GitHub..."
+        Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
+        $extractPath = "$env:TEMP\PSWriteColor"
+        Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force -ErrorAction Stop
+        
+        $baseFolder = Get-ChildItem -Path $extractPath -Directory | Select-Object -First 1
+        if ($baseFolder) {
+            $sourcePath = $baseFolder.FullName
+            # Cerca il modulo nelle sottocartelle comuni
+            foreach ($sub in @("PSWriteColor", "src", "Module")) {
+                $testPath = Join-Path $baseFolder.FullName $sub
+                if (Test-Path $testPath) {
+                    $sourcePath = $testPath
+                    break
+                }
+            }
+            $modulePath = "$env:USERPROFILE\Documents\PowerShell\Modules\PSWriteColor"
+            New-Item -ItemType Directory -Force -Path $modulePath | Out-Null
+            Copy-Item -Path "$sourcePath\*" -Destination $modulePath -Recurse -Force
+            Log "[OK] PSWriteColor installato da GitHub"
+        }
+        Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+        $pswritecolorModule = Get-Module -Name PSWriteColor -ListAvailable -ErrorAction SilentlyContinue
+        if ($pswritecolorModule) { Log "[OK] PSWriteColor installato (v$($pswritecolorModule.Version))" }
+    } catch {
+        Log "[X] Errore installazione PSWriteColor: $($_.Exception.Message)"
+        $pswritecolorModule = $null
+    }
+} else {
+    Log "[OK] PSWriteColor già installato (v$($pswritecolorModule.Version))"
+}
+
+# 3. PSTeams (da GitHub perché non più disponibile su PSGallery)
+$psteamsModule = Get-Module -Name PSTeams -ListAvailable -ErrorAction SilentlyContinue
+if (-not $psteamsModule) {
+    Log "[!] PSTeams non trovato. Installazione da GitHub..."
+    try {
+        $url = "https://github.com/EvotecIT/PSTeams/archive/refs/heads/master.zip"
+        $zipPath = "$env:TEMP\PSTeams.zip"
+        Log "[DL] Download PSTeams da GitHub..."
+        Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
+        $extractPath = "$env:TEMP\PSTeams"
+        Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force -ErrorAction Stop
+        $sourcePath = Join-Path $extractPath "PSTeams-main\Module\PSTeams"
+        if (Test-Path $sourcePath) {
+            $modulePath = "$env:USERPROFILE\Documents\PowerShell\Modules\PSTeams"
+            New-Item -ItemType Directory -Force -Path $modulePath | Out-Null
+            Copy-Item -Path "$sourcePath\*" -Destination $modulePath -Recurse -Force
+            Log "[OK] PSTeams installato da GitHub"
+        }
+        Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+        $psteamsModule = Get-Module -Name PSTeams -ListAvailable -ErrorAction SilentlyContinue
+        if ($psteamsModule) { Log "[OK] PSTeams installato (v$($psteamsModule.Version))" }
+    } catch {
+        Log "[X] Errore installazione PSTeams: $($_.Exception.Message)"
+        $psteamsModule = $null
+    }
+} else {
+    Log "[OK] PSTeams già installato (v$($psteamsModule.Version))"
+}
+
+# 4. PSSharedGoods (da PSGallery, silent)
+if ($psteamsModule) {
+    $sharedGoods = Get-Module -Name PSSharedGoods -ListAvailable -ErrorAction SilentlyContinue
+    if (-not $sharedGoods) {
+        Log "[!] PSSharedGoods non trovato. Installazione silent da PSGallery..."
+        try {
+            Install-Module -Name PSSharedGoods -Scope CurrentUser -Force -AcceptLicense -SkipPublisherCheck -ErrorAction Stop
+            Log "[OK] PSSharedGoods installato da PSGallery"
+        } catch {
+            Log "[!] PSSharedGoods non installato: $($_.Exception.Message)"
+        }
+    } else {
+        Log "[OK] PSSharedGoods già installato (v$($sharedGoods.Version))"
+    }
+}
+
+# 5. PSSlack (da PSGallery, silent)
+if ($psteamsModule) {
+    $psslack = Get-Module -Name PSSlack -ListAvailable -ErrorAction SilentlyContinue
+    if (-not $psslack) {
+        Log "[!] PSSlack non trovato. Installazione silent da PSGallery..."
+        try {
+            Install-Module -Name PSSlack -Scope CurrentUser -Force -AcceptLicense -SkipPublisherCheck -ErrorAction Stop
+            Log "[OK] PSSlack installato da PSGallery"
+        } catch {
+            Log "[!] PSSlack non installato: $($_.Exception.Message)"
+        }
+    } else {
+        Log "[OK] PSSlack già installato (v$($psslack.Version))"
+    }
+}
+
+# 6. PSBlackListChecker (da GitHub perché dipende da PSTeams)
+$module = Get-Module -Name PSBlackListChecker -ListAvailable -ErrorAction SilentlyContinue
+if (-not $module -and $psteamsModule -and $pswritecolorModule) {
+    Log "[!] PSBlackListChecker non trovato. Installazione da GitHub..."
+    try {
+        $url = "https://github.com/EvotecIT/PSBlackListChecker/archive/refs/heads/master.zip"
+        $zipPath = "$env:TEMP\PSBlackListChecker.zip"
+        Log "[DL] Download PSBlackListChecker da GitHub..."
+        Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
+        $extractPath = "$env:TEMP\PSBlackListChecker"
+        Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force -ErrorAction Stop
+        
+        $baseFolder = Get-ChildItem -Path $extractPath -Directory | Select-Object -First 1
+        if ($baseFolder) {
+            $sourcePath = $baseFolder.FullName
+            foreach ($sub in @("PSBlackListChecker", "src", "Module")) {
+                $testPath = Join-Path $baseFolder.FullName $sub
+                if (Test-Path $testPath) {
+                    $sourcePath = $testPath
+                    break
+                }
+            }
+            $modulePath = "$env:USERPROFILE\Documents\PowerShell\Modules\PSBlackListChecker"
+            New-Item -ItemType Directory -Force -Path $modulePath | Out-Null
+            Copy-Item -Path "$sourcePath\*" -Destination $modulePath -Recurse -Force
+            Log "[OK] PSBlackListChecker installato da GitHub"
+        }
+        Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+        $module = Get-Module -Name PSBlackListChecker -ListAvailable -ErrorAction SilentlyContinue
+        if ($module) { Log "[OK] PSBlackListChecker installato (v$($module.Version))" }
+    } catch {
+        Log "[X] Errore installazione PSBlackListChecker: $($_.Exception.Message)"
+        $module = $null
+    }
+} elseif ($module) {
+    Log "[OK] PSBlackListChecker già installato (v$($module.Version))"
+} else {
+    Log "[!] PSTeams o PSWriteColor non disponibili. PSBlackListChecker non installabile."
+    Log "[i] Continuo con controlli manuali."
+}
+
+# 7. Importa tutti i moduli per verificarli
+if ($module) {
+    try {
+        Import-Module -Name PSBlackListChecker -Force -ErrorAction Stop
+        Log "[OK] PSBlackListChecker importato correttamente."
+    } catch {
+        Log "[!] Errore importazione PSBlackListChecker: $($_.Exception.Message)"
+        Log "[i] Continuo con controlli manuali."
+        $module = $null
+    }
+}
+
+#Fine installazione moduli
+
 
     # --- Risolvi l'IP ---
     $isIP = $target -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$'
@@ -3145,7 +3401,9 @@ function Build-GUI {
                 @{Text="🔍 Ricerca File"; Action={Show-SearchDialog}; Tooltip="Apre il dialogo di ricerca rapida file e contenuti"}
                 @{Text="⏹️ Annulla"; Action={$script:cancelRequested=$true}; Tooltip="Annulla l'operazione in corso in modo sicuro"}
  #               @{Text="❌ Esci"; Action={$script:isClosing=$true;$script:form.Close()}; Tooltip="Chiude l'applicazione di manutenzione"}
-                @{Text="🖥️ Assist. Remota"; Action={Do-RemoteAssist}; Tooltip="Scarica e avvia RustDesk per assistenza remota"}				
+                @{Text="🖥️ Assist. Remota"; Action={Do-RemoteAssist}; Tooltip="Scarica e avvia RustDesk per assistenza remota"}
+				@{Text="🌐 Assist. LAN"; Action={Do-VNCViewer}; Tooltip="Avvia TightVNC Viewer portatile per assistenza remota in LAN"}				
+				
             )
         }
     }
