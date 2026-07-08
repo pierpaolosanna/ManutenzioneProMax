@@ -1346,6 +1346,289 @@ function Do-VNCViewer {
     Flush-LogBuffer; Pump-UI
 }
 
+
+# ---------- FUNZIONI GESTIONE RDP ----------
+
+function New-RDPFile {
+    param([string]$FilePath, [string]$IP, [string]$User)
+    $rdpContent = @"
+full address:s:$IP
+server port:i:3389
+username:s:$User
+domain:s:
+allow font smoothing:i:1
+allow desktop composition:i:1
+disable wallpaper:i:0
+disable full window drag:i:1
+disable menu anims:i:1
+disable themes:i:0
+disable cursor setting:i:0
+bitmapcachepersistenable:i:1
+networkautodetect:i:1
+bandwidthautodetect:i:1
+displayconnectionbar:i:1
+enableworkspacereconnect:i:0
+disable cursor i:0
+redirectclipboard:i:1
+redirectprinters:i:0
+redirectcomports:i:0
+redirectsmartcards:i:0
+redirectposdevices:i:0
+autoreconnection enabled:i:1
+authentication level:i:2
+prompt for credentials:i:0
+negotiate security layer:i:1
+remoteapplicationmode:i:0
+alternate shell:s:
+shell working directory:s:
+gatewayhostname:s:
+gatewayusagemethod:i:4
+gatewaycredentialssource:i:4
+gatewayprofileusagemethod:i:0
+promptcredentialonce:i:0
+use redirection server name:i:0
+"@
+    Set-Content -Path $FilePath -Value $rdpContent -Force
+}
+
+function Start-RDPWithCred {
+    param([string]$IP, [string]$User, [string]$Pass, [string]$RDPFile)
+    try {
+        # 1. Salva temporaneamente le credenziali in Windows Credential Manager
+        $null = cmdkey /generic:"TERMSRV/$IP" /user:"$User" /pass:"$Pass"
+        
+        # 2. Lancia mstsc.exe
+        Start-Process "mstsc.exe" -ArgumentList "`"$RDPFile`""
+        
+        Log "[OK] Sessione RDP avviata per $IP"
+        Update-Status "[OK] RDP Connesso a $IP" $successColor
+        
+        # 3. Opzionale: Rimuove la credenziale dopo 30 secondi per sicurezza
+        # (Lo lascio commentato, se vuoi che si cancelli da sola decommentalo)
+        # Start-Sleep -Seconds 30
+        # $null = cmdkey /delete:"TERMSRV/$IP"
+    } catch {
+        Log "[X] Errore avvio RDP: $($_.Exception.Message)"
+    }
+}
+
+
+function Do-RDPManager {
+    if($script:isClosing -or (Test-Cancel)){return}
+
+    $promptDir = Join-Path $scriptRoot "Prompt"
+    if (-not (Test-Path $promptDir)) { New-Item -ItemType Directory -Force -Path $promptDir | Out-Null }
+
+    # --- Creazione Form Dark ---
+    $rdpForm = New-Object System.Windows.Forms.Form
+    $rdpForm.Text = "Gestore Sessioni RDP"
+    $rdpForm.Size = New-Object System.Drawing.Size(500, 450)
+    $rdpForm.StartPosition = "CenterParent"
+    $rdpForm.FormBorderStyle = "FixedDialog"
+    $rdpForm.MaximizeBox = $false
+    $rdpForm.MinimizeBox = $false
+    $rdpForm.BackColor = $bgColor
+    $rdpForm.ForeColor = $fgColor
+    $rdpForm.TopMost = $true
+
+    # --- Label Lista Sessioni ---
+    $lblList = New-Object System.Windows.Forms.Label
+    $lblList.Text = "Sessioni Salvate (cartella Prompt):"
+    $lblList.Location = New-Object System.Drawing.Point(15, 15)
+    $lblList.Size = New-Object System.Drawing.Size(300, 20)
+    $lblList.ForeColor = $fgColor
+    $rdpForm.Controls.Add($lblList)
+
+    # --- ComboBox Sessioni ---
+    $cmbSessions = New-Object System.Windows.Forms.ComboBox
+    $cmbSessions.Location = New-Object System.Drawing.Point(15, 40)
+    $cmbSessions.Size = New-Object System.Drawing.Size(350, 25)
+    $cmbSessions.BackColor = $bgCard
+    $cmbSessions.ForeColor = $fgColor
+    $cmbSessions.DropDownStyle = "DropDownList"
+    # Popola la lista
+    Get-ChildItem -Path $promptDir -Filter "*.rdp" | ForEach-Object { $cmbSessions.Items.Add($_.BaseName) | Out-Null }
+    if ($cmbSessions.Items.Count -gt 0) { $cmbSessions.SelectedIndex = 0 }
+    $rdpForm.Controls.Add($cmbSessions)
+
+    # --- Pulsanti Lista ---
+    $btnConnect = New-Object System.Windows.Forms.Button
+    $btnConnect.Text = "Connetti"
+    $btnConnect.Location = New-Object System.Drawing.Point(375, 38)
+    $btnConnect.Size = New-Object System.Drawing.Size(100, 28)
+    $btnConnect.BackColor = $successColor
+    $btnConnect.ForeColor = [System.Drawing.Color]::White
+    $btnConnect.FlatStyle = "Flat"
+    $rdpForm.Controls.Add($btnConnect)
+
+    $btnDelete = New-Object System.Windows.Forms.Button
+    $btnDelete.Text = "Elimina"
+    $btnDelete.Location = New-Object System.Drawing.Point(375, 72)
+    $btnDelete.Size = New-Object System.Drawing.Size(100, 25)
+    $btnDelete.BackColor = $exitColor
+    $btnDelete.ForeColor = [System.Drawing.Color]::White
+    $btnDelete.FlatStyle = "Flat"
+    $rdpForm.Controls.Add($btnDelete)
+
+    # --- Separatore ---
+    $sep = New-Object System.Windows.Forms.Label
+    $sep.Text = "─" * 60
+    $sep.Location = New-Object System.Drawing.Point(15, 105)
+    $sep.ForeColor = $separatorColor
+    $rdpForm.Controls.Add($sep)
+
+    # --- Campi Nuova Connessione ---
+    $lblNew = New-Object System.Windows.Forms.Label
+    $lblNew.Text = "Nuova Connessione RDP:"
+    $lblNew.Location = New-Object System.Drawing.Point(15, 125)
+    $lblNew.Size = New-Object System.Drawing.Size(200, 20)
+    $lblNew.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $rdpForm.Controls.Add($lblNew)
+
+    $txtName = New-Object System.Windows.Forms.TextBox
+    $txtName.Text = "Nome PC (es. Server Magazzino)"
+    $txtName.Location = New-Object System.Drawing.Point(15, 150)
+    $txtName.Size = New-Object System.Drawing.Size(460, 25)
+    $txtName.BackColor = $bgCard
+    $txtName.ForeColor = $fgDim
+    $rdpForm.Controls.Add($txtName)
+
+    $txtIP = New-Object System.Windows.Forms.TextBox
+    $txtIP.Text = "192.168.1."
+    $txtIP.Location = New-Object System.Drawing.Point(15, 180)
+    $txtIP.Size = New-Object System.Drawing.Size(220, 25)
+    $txtIP.Font = New-Object System.Drawing.Font("Consolas", 10)
+    $txtIP.BackColor = $bgCard
+    $txtIP.ForeColor = $fgColor
+    $rdpForm.Controls.Add($txtIP)
+
+    $txtUser = New-Object System.Windows.Forms.TextBox
+    $txtUser.Text = "Administrator"
+    $txtUser.Location = New-Object System.Drawing.Point(250, 180)
+    $txtUser.Size = New-Object System.Drawing.Size(225, 25)
+    $txtUser.BackColor = $bgCard
+    $txtUser.ForeColor = $fgColor
+    $rdpForm.Controls.Add($txtUser)
+
+    $txtPass = New-Object System.Windows.Forms.TextBox
+    $txtPass.Text = "Password"
+    $txtPass.Location = New-Object System.Drawing.Point(15, 210)
+    $txtPass.Size = New-Object System.Drawing.Size(460, 25)
+    $txtPass.PasswordChar = "*"
+    $txtPass.BackColor = $bgCard
+    $txtPass.ForeColor = $fgColor
+    $rdpForm.Controls.Add($txtPass)
+
+    $btnSave = New-Object System.Windows.Forms.Button
+    $btnSave.Text = "💾 Salva e Connetti"
+    $btnSave.Location = New-Object System.Drawing.Point(15, 250)
+    $btnSave.Size = New-Object System.Drawing.Size(460, 35)
+    $btnSave.BackColor = $accentColor
+    $btnSave.ForeColor = [System.Drawing.Color]::White
+    $btnSave.FlatStyle = "Flat"
+    $btnSave.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $rdpForm.Controls.Add($btnSave)
+
+    # --- Log Area nel Form ---
+    $lblLogTitle = New-Object System.Windows.Forms.Label
+    $lblLogTitle.Text = "Stato:"
+    $lblLogTitle.Location = New-Object System.Drawing.Point(15, 300)
+    $lblLogTitle.ForeColor = $fgDim
+    $rdpForm.Controls.Add($lblLogTitle)
+
+    $txtFormLog = New-Object System.Windows.Forms.TextBox
+    $txtFormLog.Multiline = $true
+    $txtFormLog.ReadOnly = $true
+    $txtFormLog.Location = New-Object System.Drawing.Point(15, 320)
+    $txtFormLog.Size = New-Object System.Drawing.Size(460, 80)
+    $txtFormLog.BackColor = $logBg
+    $txtFormLog.ForeColor = $fgDim
+    $txtFormLog.Font = New-Object System.Drawing.Font("Consolas", 8)
+    $rdpForm.Controls.Add($txtFormLog)
+
+    # --- LOGICA EVENTI ---
+
+    # Connetti a sessione esistente
+    $btnConnect.Add_Click({
+        if ($cmbSessions.SelectedItem) {
+            $name = $cmbSessions.SelectedItem
+            $rdpFile = Join-Path $promptDir "$name.rdp"
+            $jsonFile = Join-Path $promptDir "$name.json"
+            
+            if (Test-Path $jsonFile) {
+                $data = Get-Content $jsonFile | ConvertFrom-Json
+                $txtFormLog.Text = "[...] Connessione a $($data.IP) in corso..."
+                Start-RDPWithCred -IP $data.IP -User $data.User -Pass $data.Pass -RDPFile $rdpFile
+            } else {
+                $txtFormLog.Text = "[X] File credenziali JSON mancante per $name"
+            }
+        }
+    })
+
+    # Elimina sessione
+    $btnDelete.Add_Click({
+        if ($cmbSessions.SelectedItem) {
+            $name = $cmbSessions.SelectedItem
+            $resp = [System.Windows.Forms.MessageBox]::Show("Eliminare la sessione '$name'?", "Conferma", "YesNo", "Warning")
+            if ($resp -eq "Yes") {
+                Remove-Item (Join-Path $promptDir "$name.rdp") -Force -ErrorAction SilentlyContinue
+                Remove-Item (Join-Path $promptDir "$name.json") -Force -ErrorAction SilentlyContinue
+                $cmbSessions.Items.Remove($name)
+                $txtFormLog.Text = "[OK] Sessione '$name' eliminata."
+            }
+        }
+    })
+
+    # Salva e Connetti Nuova
+    $btnSave.Add_Click({
+        $nome = $txtName.Text.Trim()
+        $ip = $txtIP.Text.Trim()
+        $user = $txtUser.Text.Trim()
+        $pass = $txtPass.Text.Trim()
+
+        if ([string]::IsNullOrEmpty($nome) -or [string]::IsNullOrEmpty($ip) -or $ip -eq "192.168.1.") {
+            $txtFormLog.Text = "[X] Inserisci un Nome valido e un IP."
+            return
+        }
+
+        # Rimuovi caratteri non validi per i nomi dei file
+        $safeName = ($nome -replace '[\\/:*?"<>|]', '_')
+        $rdpPath = Join-Path $promptDir "$safeName.rdp"
+        $jsonPath = Join-Path $promptDir "$safeName.json"
+
+        try {
+            # Crea file RDP
+            New-RDPFile -FilePath $rdpPath -IP $ip -User $user
+            
+            # Crea file JSON con le credenziali
+            $credObj = @{ IP = $ip; User = $user; Pass = $pass } | ConvertTo-Json
+            Set-Content -Path $jsonPath -Value $credObj -Force
+
+            $txtFormLog.Text = "[OK] Salvataggio completato in Prompt\. Avvio..."
+
+            # Aggiorna combobox se non c'è
+            if (-not $cmbSessions.Items.Contains($safeName)) { $cmbSessions.Items.Add($safeName) }
+            $cmbSessions.SelectedItem = $safeName
+
+            # Avvia
+            Start-RDPWithCred -IP $ip -User $user -Pass $pass -RDPFile $rdpPath
+            
+        } catch {
+            $txtFormLog.Text = "[X] Errore durante il salvataggio: $($_.Exception.Message)"
+        }
+    })
+
+    # Mostra il form
+    $rdpForm.ShowDialog($script:form) | Out-Null
+
+    Log "[i] Gestore RDP chiuso."
+    Update-Progress 100
+    Flush-LogBuffer; Pump-UI
+}
+
+
+
+
 # ============================================================
 # BLOCCO 5 - FUNZIONI DI PULIZIA
 # ============================================================
@@ -3402,7 +3685,8 @@ function Build-GUI {
                 @{Text="⏹️ Annulla"; Action={$script:cancelRequested=$true}; Tooltip="Annulla l'operazione in corso in modo sicuro"}
  #               @{Text="❌ Esci"; Action={$script:isClosing=$true;$script:form.Close()}; Tooltip="Chiude l'applicazione di manutenzione"}
                 @{Text="🖥️ Assist. Remota"; Action={Do-RemoteAssist}; Tooltip="Scarica e avvia RustDesk per assistenza remota"}
-				@{Text="🌐 Assist. LAN"; Action={Do-VNCViewer}; Tooltip="Avvia TightVNC Viewer portatile per assistenza remota in LAN"}				
+				@{Text="🌐 Assist. LAN"; Action={Do-VNCViewer}; Tooltip="Avvia TightVNC Viewer portatile per assistenza remota in LAN"}
+				@{Text="🖥️ RDP LAN"; Action={Do-RDPManager}; Tooltip="Gestisce, salva e avvia sessioni Desktop Remoto nella cartella Prompt"}				
 				
             )
         }
