@@ -2645,12 +2645,38 @@ if (-not $psteamsModule) {
 if ($psteamsModule) {
     $sharedGoods = Get-Module -Name PSSharedGoods -ListAvailable -ErrorAction SilentlyContinue
     if (-not $sharedGoods) {
-        Log "[!] PSSharedGoods non trovato. Installazione silent da PSGallery..."
+        Log "[!] PSSharedGoods non trovato. Installazione da GitHub..."
         try {
-            Install-Module -Name PSSharedGoods -Scope CurrentUser -Force -AcceptLicense -SkipPublisherCheck -ErrorAction Stop
-            Log "[OK] PSSharedGoods installato da PSGallery"
+            $url = "https://github.com/EvotecIT/PSSharedGoods/archive/refs/heads/master.zip"
+            $zipPath = "$env:TEMP\PSSharedGoods.zip"
+            Log "[DL] Download PSSharedGoods da GitHub..."
+            Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
+            $extractPath = "$env:TEMP\PSSharedGoods"
+            Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force -ErrorAction Stop
+            
+            $baseFolder = Get-ChildItem -Path $extractPath -Directory | Select-Object -First 1
+            if ($baseFolder) {
+                $sourcePath = $baseFolder.FullName
+                # Cerca il modulo nelle sottocartelle comuni
+                foreach ($sub in @("PSSharedGoods", "src", "Module")) {
+                    $testPath = Join-Path $baseFolder.FullName $sub
+                    if (Test-Path $testPath) {
+                        $sourcePath = $testPath
+                        break
+                    }
+                }
+                $modulePath = "$env:USERPROFILE\Documents\PowerShell\Modules\PSSharedGoods"
+                New-Item -ItemType Directory -Force -Path $modulePath | Out-Null
+                Copy-Item -Path "$sourcePath\*" -Destination $modulePath -Recurse -Force
+                Log "[OK] PSSharedGoods installato da GitHub"
+            }
+            Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+            $sharedGoods = Get-Module -Name PSSharedGoods -ListAvailable -ErrorAction SilentlyContinue
+            if ($sharedGoods) { Log "[OK] PSSharedGoods installato (v$($sharedGoods.Version))" }
         } catch {
-            Log "[!] PSSharedGoods non installato: $($_.Exception.Message)"
+            Log "[X] Errore installazione PSSharedGoods: $($_.Exception.Message)"
+            $sharedGoods = $null
         }
     } else {
         Log "[OK] PSSharedGoods già installato (v$($sharedGoods.Version))"
@@ -2658,20 +2684,108 @@ if ($psteamsModule) {
 }
 
 # 5. PSSlack (da PSGallery, silent)
+# 5. PSSlack (da GitHub perché non più disponibile su PSGallery)
 if ($psteamsModule) {
     $psslack = Get-Module -Name PSSlack -ListAvailable -ErrorAction SilentlyContinue
     if (-not $psslack) {
-        Log "[!] PSSlack non trovato. Installazione silent da PSGallery..."
-        try {
-            Install-Module -Name PSSlack -Scope CurrentUser -Force -AcceptLicense -SkipPublisherCheck -ErrorAction Stop
-            Log "[OK] PSSlack installato da PSGallery"
-        } catch {
-            Log "[!] PSSlack non installato: $($_.Exception.Message)"
+        Log "[!] PSSlack non trovato. Installazione da GitHub..."
+        
+        # Array di URL da provare (main e master)
+        $urls = @(
+            "https://github.com/RamblingCookieMonster/PSSlack/archive/refs/heads/master.zip",
+            "https://github.com/EvotecIT/PSSlack/archive/refs/heads/master.zip"
+        )
+        
+        $installed = $false
+        foreach ($url in $urls) {
+            try {
+                Log "[DL] Tentativo download da: $url"
+                $zipPath = "$env:TEMP\PSSlack.zip"
+                Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
+                $extractPath = "$env:TEMP\PSSlack"
+                Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force -ErrorAction Stop
+                
+                $baseFolder = Get-ChildItem -Path $extractPath -Directory | Select-Object -First 1
+                if ($baseFolder) {
+                    $sourcePath = $baseFolder.FullName
+                    foreach ($sub in @("PSSlack", "src", "Module")) {
+                        $testPath = Join-Path $baseFolder.FullName $sub
+                        if (Test-Path $testPath) {
+                            $sourcePath = $testPath
+                            break
+                        }
+                    }
+                    $modulePath = "$env:USERPROFILE\Documents\PowerShell\Modules\PSSlack"
+                    New-Item -ItemType Directory -Force -Path $modulePath | Out-Null
+                    Copy-Item -Path "$sourcePath\*" -Destination $modulePath -Recurse -Force
+                    Log "[OK] PSSlack installato da GitHub (da $url)"
+                    $installed = $true
+                    break
+                }
+                Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
+                Remove-Item -Path $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+            } catch {
+                Log "[!] Tentativo fallito: $($_.Exception.Message)"
+                Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
+                Remove-Item -Path $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+                continue
+            }
+        }
+        
+        if (-not $installed) {
+            Log "[!] PSSlack non installato: nessun URL funzionante."
+            Log "[i] Continuo senza PSSlack (il modulo non è obbligatorio)."
+            $psslack = $null
+        } else {
+            $psslack = Get-Module -Name PSSlack -ListAvailable -ErrorAction SilentlyContinue
+            if ($psslack) { Log "[OK] PSSlack installato (v$($psslack.Version))" }
         }
     } else {
         Log "[OK] PSSlack già installato (v$($psslack.Version))"
     }
 }
+
+if ($psteamsModule) {
+    $psdiscord = Get-Module -Name PSDiscord -ListAvailable -ErrorAction SilentlyContinue
+    if (-not $psdiscord) {
+        Log "[!] PSDiscord non trovato. Installazione da GitHub..."
+        try {
+            $url = "https://github.com/EvotecIT/PSDiscord/archive/refs/heads/master.zip"
+            $zipPath = "$env:TEMP\PSDiscord.zip"
+            Log "[DL] Download PSDiscord da GitHub..."
+            Invoke-WebRequest -Uri $url -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
+            $extractPath = "$env:TEMP\PSDiscord"
+            Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force -ErrorAction Stop
+            
+            $baseFolder = Get-ChildItem -Path $extractPath -Directory | Select-Object -First 1
+            if ($baseFolder) {
+                $sourcePath = $baseFolder.FullName
+                foreach ($sub in @("PSDiscord", "src", "Module")) {
+                    $testPath = Join-Path $baseFolder.FullName $sub
+                    if (Test-Path $testPath) {
+                        $sourcePath = $testPath
+                        break
+                    }
+                }
+                $modulePath = "$env:USERPROFILE\Documents\PowerShell\Modules\PSDiscord"
+                New-Item -ItemType Directory -Force -Path $modulePath | Out-Null
+                Copy-Item -Path "$sourcePath\*" -Destination $modulePath -Recurse -Force
+                Log "[OK] PSDiscord installato da GitHub"
+            }
+            Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+            $psdiscord = Get-Module -Name PSDiscord -ListAvailable -ErrorAction SilentlyContinue
+            if ($psdiscord) { Log "[OK] PSDiscord installato (v$($psdiscord.Version))" }
+        } catch {
+            Log "[X] Errore installazione PSDiscord: $($_.Exception.Message)"
+            $psdiscord = $null
+        }
+    } else {
+        Log "[OK] PSDiscord già installato (v$($psdiscord.Version))"
+    }
+}
+
+
 
 # 6. PSBlackListChecker (da GitHub perché dipende da PSTeams)
 $module = Get-Module -Name PSBlackListChecker -ListAvailable -ErrorAction SilentlyContinue
