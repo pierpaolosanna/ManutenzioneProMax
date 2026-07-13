@@ -8,7 +8,7 @@ All-in-one Windows maintenance and diagnostics tool with a modern dark GUI. Port
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1%20%7C%207.x-blue?logo=powershell)
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/Version-3.0.2-brightgreen)
+![Version](https://img.shields.io/badge/Version-3.0.4-brightgreen)
 
 ## 📋 Descrizione
 
@@ -197,7 +197,7 @@ ManutenzioneProMax/
 ├── Docs/Buttons/ # Documentazione pulsanti (creata automaticamente)
 ├── ManutenzioneProMax.bat # Batch per esecuzione semplificata
 ├── README.md # Questa documentazione
-└── version.txt # Versione corrente (3.0.2)
+└── version.txt # Versione corrente (3.0.4)
 
 
 ## 🤝 Contributi
