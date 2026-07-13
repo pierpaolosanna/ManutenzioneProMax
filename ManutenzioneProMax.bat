@@ -1,232 +1,153 @@
 @echo off
 setlocal enabledelayedexpansion
-
 color 0A
 
-:: =====================================================
-:: Controlla se siamo in fase di riavvio post-installazione
-:: =====================================================
-if "%~1"=="--post-install" goto :POST_INSTALL_CHECK
+set "BASE=%~dp0"
+set "BASE=%BASE:~0,-1%"
+set "SCRIPT=%BASE%\Manutenzione_PRO_MAX.ps1"
 
-:: =====================================================
-:: HEADER PRINCIPALE E SCELTA CON VALIDAZIONE
-:: =====================================================
-:MENU_PRINCIPALE
+:MENU
 cls
-echo.
+echo:
 echo ============================================================
-echo.
-echo              MANUTENZIONE PRO MAX Peters
-echo.
+echo MANUTENZIONE PRO MAX Peters
 echo ============================================================
-echo.
-echo        [1]  Esegui come UTENTE
-echo        [2]  Esegui come AMMINISTRATORE
-echo.
-echo ------------------------------------------------------------
-echo.
-set /p scelta="   Scegli (1 o 2): "
-
-:: Validazione input
-if "%scelta%"=="1" goto :CONTINUA
-if "%scelta%"=="2" goto :CONTINUA
-
-:: Input non valido
-echo.
-echo ============================================================
-echo.
-echo        [ERRORE] Scelta non valida!
-echo.
-echo        Puoi inserire solo 1 o 2.
-echo        Premi un tasto per riprovare...
-echo.
-echo ============================================================
-echo.
+echo:
+echo Questo launcher installa PowerShell 7 (ultima versione),
+echo sblocca tutti i file nella cartella ed esegue lo script.
+echo:
+echo [1] Esegui come UTENTE
+echo [2] Esegui come AMMINISTRATORE
+echo:
+set /p scelta=" Scegli (1 o 2): "
+if "%scelta%"=="1" goto :VERIFICA
+if "%scelta%"=="2" goto :VERIFICA
+echo Scelta non valida!
 pause >nul
-goto :MENU_PRINCIPALE
+goto :MENU
 
-:CONTINUA
-
-:: =====================================================
-:: Verifica presenza di PowerShell 7 (pwsh)
-:: =====================================================
-where pwsh >nul 2>&1
-if %errorlevel% equ 0 (
-    echo.
-    echo        [OK] PowerShell 7 rilevato con successo!
-    set "PS=pwsh"
-    goto :AVVIO_SCRIPT
+:VERIFICA
+rem --- Verifica PowerShell 7 ---
+if exist "%ProgramFiles%\PowerShell\7\pwsh.exe" (
+    set "PWSH=%ProgramFiles%\PowerShell\7\pwsh.exe"
+    goto :UNBLOCK
 )
 
-:: =====================================================
-:: PowerShell 7 NON trovato - Procedi con installazione
-:: =====================================================
+where pwsh >nul 2>&1
+if %errorlevel% equ 0 (
+    for /f "delims=" %%A in ('where pwsh 2^>nul') do set "PWSH=%%A"
+    goto :UNBLOCK
+)
+
+rem --- Installazione PowerShell 7 ---
 cls
-echo.
+echo:
 echo ============================================================
-echo.
-echo          INSTALLAZIONE COMPONENTE RICHIESTA
-echo.
+echo INSTALLAZIONE POWERSHELL 7 DA GITHUB
+echo Microsoft Powershell - Attendete l'installazione -
 echo ============================================================
-echo.
-echo        Prodotto: Microsoft PowerShell 7
-echo        Sorgente: Microsoft Winget Repository
-echo        Sviluppatore: Microsoft Corporation
-echo.
-echo        * Questo e un prodotto Microsoft ufficiale e sicuro.
-echo        * Verra installato tramite il gestore pacchetti Winget.
-echo        * L installazione e completamente automatica.
-echo.
-echo        ! ATTENZIONE: L installazione potrebbe richiedere
-echo          alcuni minuti. Si prega di NON CHIUDERE questa
-echo          finestra. La pazienza e apprezzata!
-echo.
-echo ------------------------------------------------------------
-echo.
-echo        Avvio installazione...
-echo.
+echo:
+echo Cerco ultima versione stabile...
 
-winget install --id Microsoft.PowerShell --source winget --accept-package-agreements --accept-source-agreements
+set "VER="
+for /f "delims=" %%A in ('"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -Command "(Invoke-RestMethod -Uri 'https://api.github.com/repos/PowerShell/PowerShell/releases/latest' -UseBasicParsing).tag_name.Substring(1)" 2^>nul') do set "VER=%%A"
 
-echo.
-echo ------------------------------------------------------------
-echo.
-echo        Verifica dell installazione in corso...
-echo.
+if not defined VER set "VER=7.6.3"
+echo Versione: v%VER%
+echo:
+
+set "MSI=PowerShell-%VER%-win-x64.msi"
+set "URL=https://github.com/PowerShell/PowerShell/releases/download/v%VER%/%MSI%"
+set "MSI_PATH=%TEMP%\%MSI%"
+
+echo Scarico da GitHub...
+%SystemRoot%\System32\curl.exe -L -o "%MSI_PATH%" -S --progress-bar "%URL%"
+if %errorlevel% neq 0 (
+    echo Download fallito, provo con winget...
+    winget install --id Microsoft.PowerShell --source winget --accept-package-agreements --accept-source-agreements
+    timeout /t 5 /nobreak >nul
+    goto :DOPO_INSTALLA
+)
+
+echo Installazione in corso...
+%SystemRoot%\System32\msiexec.exe /i "%MSI_PATH%" /passive /norestart
+echo Attendere il completamento dell'installazione...
+timeout /t 15 /nobreak >nul
+del "%MSI_PATH%" 2>nul
+
+:DOPO_INSTALLA
+refreshenv >nul 2>&1
+
+if exist "%ProgramFiles%\PowerShell\7\pwsh.exe" (
+    set "PWSH=%ProgramFiles%\PowerShell\7\pwsh.exe"
+    goto :UNBLOCK
+)
 
 where pwsh >nul 2>&1
 if %errorlevel% equ 0 (
-    echo.
-    echo ============================================================
-    echo.
-    echo      [OK] INSTALLAZIONE COMPLETATA CON SUCCESSO
-    echo.
-    echo ============================================================
-    echo.
-    echo        * Microsoft PowerShell 7 installato correttamente!
-    echo.
-    echo        ---------------------------------------------------
-    echo           RIAVVIO NECESSARIO
-    echo.
-    echo           Per aggiornare le variabili di sistema,
-    echo           lo script verra riavviato come Amministratore.
-    echo           Questo e normale e sicuro!
-    echo        ---------------------------------------------------
-    echo.
-    
-    :: Assegna un titolo univoco a questa finestra
-    set "WIN_TITLE=Manutenzione_Install_%random%"
-    title %WIN_TITLE%
-    
-    set "BAT_PATH=%~f0"
-    
-    echo        Preparazione al riavvio...
-    timeout /t 3 /nobreak >nul
-    
-    :: CORRETTO: Sintassi pulita per PowerShell (usata la stringa letterale singola)
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '!BAT_PATH!' -ArgumentList '--post-install','!scelta!','!WIN_TITLE!' -Verb RunAs"
-    
+    for /f "delims=" %%A in ('where pwsh 2^>nul') do set "PWSH=%%A"
+    goto :UNBLOCK
+)
+
+if exist "%ProgramFiles(x86)%\PowerShell\7\pwsh.exe" (
+    set "PWSH=%ProgramFiles(x86)%\PowerShell\7\pwsh.exe"
+    goto :UNBLOCK
+)
+
+echo:
+echo ============================================================
+echo ERRORE: PowerShell 7 non è stato installato automaticamente.
+echo ============================================================
+echo:
+echo Scarica manualmente da:
+echo %URL%
+echo:
+pause
+exit /b
+
+:UNBLOCK
+echo:
+echo ============================================================
+echo SBLOCCO FILE E CARTELLE
+echo ============================================================
+echo:
+echo Rimozione flag "blocca" da:
+echo %BASE%
+echo:
+
+"%PWSH%" -NoProfile -Command "Get-ChildItem -Path '%BASE%' -Recurse -File | Unblock-File"
+
+if errorlevel 1 (
+    echo Attenzione: alcuni file potrebbero non essere sbloccati.
+) else (
+    echo OK: tutti i file sbloccati.
+)
+
+if not exist "%SCRIPT%" (
+    echo:
+    echo ERRORE: %SCRIPT% non trovato.
+    pause
     exit /b
-) else (
-    echo.
-    echo ============================================================
-    echo.
-    echo          [ERRORE] INSTALLAZIONE FALLITA
-    echo.
-    echo ============================================================
-    echo.
-    echo        ! Impossibile installare PowerShell 7.
-    echo          Non preoccuparti! Verra utilizzato PowerShell classico.
-    echo          Le funzionalita base saranno comunque disponibili.
-    echo.
-    set "PS=powershell"
-    goto :AVVIO_SCRIPT
 )
 
-:: =====================================================
-:: SEZIONE: Verifica post-riavvio
-:: =====================================================
-:POST_INSTALL_CHECK
-cls
-echo.
+echo:
 echo ============================================================
-echo.
-echo          VERIFICA POST-INSTALLAZIONE
-echo              Manutenzione PRO MAX
-echo.
+echo AVVIO SCRIPT (PowerShell 7)
 echo ============================================================
-echo.
-
-:: Recupera la scelta originale e il titolo della finestra precedente
-set "scelta=%~2"
-set "WIN_TITLE=%~3"
-
-where pwsh >nul 2>&1
-if %errorlevel% equ 0 (
-    echo        [OK] PowerShell 7 confermato nel PATH di sistema.
-    set "PS=pwsh"
-) else (
-    echo        [!] PowerShell 7 non trovato nel PATH.
-    echo        Ricerca nel percorso di installazione predefinito...
-    echo.
-    
-    if exist "%ProgramFiles%\PowerShell\7\pwsh.exe" (
-        set "PS=%ProgramFiles%\PowerShell\7\pwsh.exe"
-        echo        [OK] Trovato in: !PS!
-    ) else if exist "%LocalAppData%\Microsoft\PowerShell\pwsh.exe" (
-        set "PS=%LocalAppData%\Microsoft\PowerShell\pwsh.exe"
-        echo        [OK] Trovato in: !PS!
-    ) else (
-        echo        [ERRORE] PowerShell 7 non trovato in nessun percorso.
-        echo        ! Nessun problema! Uso PowerShell classico come fallback.
-        set "PS=powershell"
-    )
-)
-
-echo.
-
-:: Chiudi la finestra precedente usando il suo titolo univoco
-if not "%WIN_TITLE%"=="" (
-    echo        Chiusura finestra precedente...
-    taskkill /FI "WINDOWTITLE eq %WIN_TITLE%" /F >nul 2>&1
-    timeout /t 1 /nobreak >nul
-    echo        [OK] Finestra precedente chiusa.
-    echo.
-)
-
-goto :AVVIO_SCRIPT
-
-:: =====================================================
-:: SEZIONE: Avvio script PowerShell - ESECUZIONE SINGOLA
-:: =====================================================
-:AVVIO_SCRIPT
-echo ------------------------------------------------------------
-echo.
-echo        Avvio di Manutenzione_PRO_MAX.ps1 ...
-echo.
+echo:
+echo PowerShell: %PWSH%
+echo Script:     %SCRIPT%
+echo Modalita':  %scelta%
+echo:
 
 if "%scelta%"=="2" (
-    echo        Modalita: AMMINISTRATORE
-    echo        (Verra richiesta l elevazione dei privilegi)
-    echo.
-    
-    :: Crea file batch temporaneo
-    set "TEMP_BAT=%temp%\manutenzione_admin_%random%.bat"
-    echo @echo off > "!TEMP_BAT!"
-    echo "%PS%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0Manutenzione_PRO_MAX.ps1" >> "!TEMP_BAT!"
-    
-    :: CORRETTO: Rimosse le virgolette strane \"' ... '\" che generavano l'errore
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '!TEMP_BAT!' -Verb RunAs"
-    
-    :: Elimina il file temp e chiudi questo prompt
-    ping -n 2 127.0.0.1 >nul
-    del "!TEMP_BAT!" >nul 2>&1
-    exit /b
-    
+    "%PWSH%" -NoProfile -ExecutionPolicy Bypass -Command ^
+        "Start-Process -FilePath '%PWSH%' -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','%SCRIPT%' -Verb RunAs"
 ) else (
-    echo        Modalita: UTENTE
-    echo.
-    "%PS%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0Manutenzione_PRO_MAX.ps1"
+    "%PWSH%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%"
 )
 
-endlocal
+echo:
+echo Fine. Premi un tasto per chiudere.
+pause >nul
+exit /b
