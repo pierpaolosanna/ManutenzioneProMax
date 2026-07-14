@@ -7,6 +7,22 @@ set "BASE=%BASE:~0,-1%"
 set "SCRIPT=%BASE%\Manutenzione_PRO_MAX.ps1"
 
 :: ============================================================
+:: CREAZIONE / SOVRASCRITTURA COLLEGAMENTO SUL DESKTOP
+:: ============================================================
+set "LINK_NAME=PRO MAX Maintenance"
+set "DESKTOP=%USERPROFILE%\Desktop"
+set "LINK_PATH=%DESKTOP%\%LINK_NAME%.lnk"
+
+:: Elimina il collegamento esistente (se presente)
+if exist "%LINK_PATH%" del "%LINK_PATH%"
+
+:: Crea il nuovo collegamento
+echo Creazione collegamento sul desktop...
+powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%LINK_PATH%'); $Shortcut.TargetPath = '%~f0'; $Shortcut.WorkingDirectory = '%~dp0'; $Shortcut.IconLocation = 'imageres.dll,15'; $Shortcut.Save()"
+echo [OK] Collegamento creato: %LINK_PATH%
+echo.
+
+:: ============================================================
 :: VERIFICA PRESENZA POWERSHELL 7 (PRIMA DI QUALSIASI COSA)
 :: ============================================================
 set "PWSH="
