@@ -147,7 +147,5 @@ if "%scelta%"=="2" (
     "%PWSH%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%"
 )
 
-echo:
-echo Fine. Premi un tasto per chiudere.
-pause >nul
+:: La finestra si chiuderà automaticamente al termine dello script
 exit /b
