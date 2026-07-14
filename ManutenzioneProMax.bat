@@ -6,45 +6,49 @@ set "BASE=%~dp0"
 set "BASE=%BASE:~0,-1%"
 set "SCRIPT=%BASE%\Manutenzione_PRO_MAX.ps1"
 
-:MENU
-cls
-echo:
-echo ============================================================
-echo MANUTENZIONE PRO MAX Peters
-echo ============================================================
-echo:
-echo Questo launcher installa PowerShell 7 (ultima versione),
-echo sblocca tutti i file nella cartella ed esegue lo script.
-echo:
-echo [1] Esegui come UTENTE
-echo [2] Esegui come AMMINISTRATORE
-echo:
-set /p scelta=" Scegli (1 o 2): "
-if "%scelta%"=="1" goto :VERIFICA
-if "%scelta%"=="2" goto :VERIFICA
-echo Scelta non valida!
-pause >nul
-goto :MENU
-
-:VERIFICA
-rem --- Verifica PowerShell 7 ---
+:: ============================================================
+:: VERIFICA PRESENZA POWERSHELL 7 (PRIMA DI QUALSIASI COSA)
+:: ============================================================
+set "PWSH="
 if exist "%ProgramFiles%\PowerShell\7\pwsh.exe" (
     set "PWSH=%ProgramFiles%\PowerShell\7\pwsh.exe"
-    goto :UNBLOCK
+    goto :PWSH_TROVATO
 )
 
 where pwsh >nul 2>&1
 if %errorlevel% equ 0 (
     for /f "delims=" %%A in ('where pwsh 2^>nul') do set "PWSH=%%A"
-    goto :UNBLOCK
+    goto :PWSH_TROVATO
 )
 
-rem --- Installazione PowerShell 7 ---
+:: ============================================================
+:: POWERSHELL 7 NON TROVATO → RICHIEDI ADMIN PER INSTALLARE
+:: ============================================================
+cls
+echo:
+echo ============================================================
+echo POWERSHELL 7 NON TROVATO
+echo ============================================================
+echo:
+echo Per installare PowerShell 7 sono necessari
+echo privilegi amministrativi.
+echo:
+
+net session >nul 2>&1
+if %errorlevel% neq 0 (
+    echo Riavvio del launcher come amministratore...
+    timeout /t 2 /nobreak >nul
+    powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    exit /b
+)
+
+:: ============================================================
+:: INSTALLAZIONE POWERSHELL 7 (con privilegi admin)
+:: ============================================================
 cls
 echo:
 echo ============================================================
 echo INSTALLAZIONE POWERSHELL 7 DA GITHUB
-echo Microsoft Powershell - Attendete l'installazione -
 echo ============================================================
 echo:
 echo Cerco ultima versione stabile...
@@ -105,6 +109,15 @@ echo:
 pause
 exit /b
 
+:: ============================================================
+:: POWERSHELL 7 PRESENTE → AVVIO DIRETTO (senza admin)
+:: ============================================================
+:PWSH_TROVATO
+echo:
+echo [OK] PowerShell 7 rilevato: %PWSH%
+echo:
+goto :UNBLOCK
+
 :UNBLOCK
 echo:
 echo ============================================================
@@ -137,15 +150,10 @@ echo ============================================================
 echo:
 echo PowerShell: %PWSH%
 echo Script:     %SCRIPT%
-echo Modalita':  %scelta%
 echo:
 
-if "%scelta%"=="2" (
-    "%PWSH%" -NoProfile -ExecutionPolicy Bypass -Command ^
-        "Start-Process -FilePath '%PWSH%' -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','%SCRIPT%' -Verb RunAs"
-) else (
-    "%PWSH%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%"
-)
+:: Esegue lo script normalmente (senza forzare admin)
+"%PWSH%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%"
 
 :: La finestra si chiuderà automaticamente al termine dello script
 exit /b
