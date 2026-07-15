@@ -1,5 +1,5 @@
-# Manutenzione PRO MAX v3.0.4
-# PRO MAX Maintenance v3.0.4
+# Manutenzione PRO MAX v3.0.5
+# PRO MAX Maintenance v3.0.5
 Utilizzare a proprio rischio. Nessuna garanzia espressa o implicita.
 Use at your own risk. No warranties expressed or implied.
 
