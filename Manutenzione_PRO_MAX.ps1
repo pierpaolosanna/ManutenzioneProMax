@@ -1,5 +1,5 @@
 # ============================================================
-# MANUTENZIONE PRO MAX v3.0.4 – Versione Ottimizzata
+# MANUTENZIONE PRO MAX v3.0.5 – Versione Ottimizzata
 # ============================================================
 # Auto-install PS7 + Rilancio (silenzioso)
 if ($PSVersionTable.PSVersion.Major -lt 7) {
@@ -170,7 +170,7 @@ $logFile = Join-Path $tempDir "Manutenzione_PRO_MAX_$(Get-Date -Format 'yyyyMMdd
 $isPwsh7 = ($PSVersionTable.PSVersion.Major -ge 7)
 $script:pingProperty = if ($isPwsh7) { "Latency" } else { "ResponseTime" }
 
-$script:currentVersion = "3.0.4"
+$script:currentVersion = "3.0.5"
 $script:repoOwner = "pierpaolosanna"
 $script:repoName = "ManutenzioneProMax"
 $script:scriptFileName = "Manutenzione_PRO_MAX.ps1"
