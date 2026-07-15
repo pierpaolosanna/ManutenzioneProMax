@@ -17,7 +17,6 @@ if 0==1 (
     powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%LINK_PATH%'); $Shortcut.TargetPath = '%~f0'; $Shortcut.WorkingDirectory = '%~dp0'; $Shortcut.IconLocation = 'imageres.dll,15'; $Shortcut.Save()"
     echo [OK] Collegamento creato: %LINK_PATH%
     echo.
-)
 ) else (
     echo [INFO] Collegamento non presente sul desktop. Non ne verrà creato uno nuovo.
     echo.
@@ -93,38 +92,63 @@ if %errorlevel% neq 0 (
 echo Installazione in corso...
 %SystemRoot%\System32\msiexec.exe /i "%MSI_PATH%" /passive /norestart
 echo Attendere il completamento dell'installazione...
-timeout /t 15 /nobreak >nul
+
+:: Attendere qualche secondo affinché il sistema registri i file
+timeout /t 3 /nobreak >nul
+
 del "%MSI_PATH%" 2>nul
 
 :DOPO_INSTALLA
-refreshenv >nul 2>&1
+
+:: ============================================================
+:: CONTROLLO PERIODICO DELL'INSTALLAZIONE (max 30 secondi)
+:: ============================================================
+set "MAX_TRIALS=6"
+set "TRIAL=0"
+set "PWSH_FOUND=0"
+
+:VERIFICA_INSTALLA
+set /a TRIAL+=1
 
 if exist "%ProgramFiles%\PowerShell\7\pwsh.exe" (
     set "PWSH=%ProgramFiles%\PowerShell\7\pwsh.exe"
-    goto :UNBLOCK
+    set "PWSH_FOUND=1"
+    goto :INSTALLA_OK
 )
 
 where pwsh >nul 2>&1
 if %errorlevel% equ 0 (
     for /f "delims=" %%A in ('where pwsh 2^>nul') do set "PWSH=%%A"
-    goto :UNBLOCK
+    set "PWSH_FOUND=1"
+    goto :INSTALLA_OK
 )
 
 if exist "%ProgramFiles(x86)%\PowerShell\7\pwsh.exe" (
     set "PWSH=%ProgramFiles(x86)%\PowerShell\7\pwsh.exe"
-    goto :UNBLOCK
+    set "PWSH_FOUND=1"
+    goto :INSTALLA_OK
 )
 
-echo:
-echo ============================================================
-echo ERRORE: PowerShell 7 non è stato installato automaticamente.
-echo ============================================================
-echo:
-echo Scarica manualmente da:
-echo %URL%
-echo:
-pause
-exit /b
+if %TRIAL% lss %MAX_TRIALS% (
+    echo PowerShell 7 non ancora rilevato, nuovo tentativo tra 5 secondi (%TRIAL%/%MAX_TRIALS%)...
+    timeout /t 5 /nobreak >nul
+    goto :VERIFICA_INSTALLA
+)
+
+:: Se arriviamo qui, non è stato trovato dopo i tentativi
+:INSTALLA_OK
+if %PWSH_FOUND% equ 0 (
+    echo:
+    echo ============================================================
+    echo ERRORE: PowerShell 7 non è stato installato automaticamente.
+    echo ============================================================
+    echo:
+    echo Scarica manualmente da:
+    echo %URL%
+    echo:
+    pause
+    exit /b
+)
 
 :: ============================================================
 :: POWERSHELL 7 TROVATO
@@ -145,14 +169,13 @@ echo Rimozione flag "blocco" da:
 echo %BASE%
 echo.
 
-:: ✅ TRUCCO INFALLIBILE: Ci spostiamo nella cartella del programma.
-:: Il comando CD gestisce benissimo le virgolette e le parentesi.
-cd /d "%BASE%"
+:: Spostiamoci nella cartella del programma
+cd /d "%BASE%" 2>nul
 
 set "UNBLOCK_PATH=%BASE%"
 set "TEMP_PS1=%TEMP%\unblock_%RANDOM%.ps1"
 
-:: Crea il file ps1 temporaneo per lo sblocco
+:: Crea lo script ps1 temporaneo per lo sblocco
 > "%TEMP_PS1%" echo Get-ChildItem -LiteralPath $env:UNBLOCK_PATH -Recurse -File -ErrorAction SilentlyContinue ^| ForEach-Object ^{ Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue ^}
 
 :: Esegue lo sblocco
@@ -165,7 +188,7 @@ if %errorlevel% neq 0 (
     echo OK: tutti i file sbloccati.
 )
 
-:: Controlla se lo script esiste (usando solo il nome file, senza_percorsi_lunghi)
+:: Controlla se lo script esiste (usando solo il nome file)
 if not exist "Manutenzione_PRO_MAX.ps1" (
     echo:
     echo ERRORE: Manutenzione_PRO_MAX.ps1 non trovato.
@@ -182,9 +205,7 @@ echo PowerShell: %PWSH%
 echo Script:     Manutenzione_PRO_MAX.ps1
 echo.
 
-:: ✅ AVVIO FINALE ASSOLUTAMENTE SICURO:
-:: Non passiamo più C:\Program Files (x86)\... a PowerShell.
-:: Gli passiamo SOLO il nome del file. Essendo già nella cartella giusta, funziona!
+:: Avvio finale con il file ps1
 "%PWSH%" -NoProfile -ExecutionPolicy Bypass -File "Manutenzione_PRO_MAX.ps1"
 
 exit /b
