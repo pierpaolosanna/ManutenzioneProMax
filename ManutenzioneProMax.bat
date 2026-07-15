@@ -4,26 +4,27 @@ color 0A
 
 set "BASE=%~dp0"
 set "BASE=%BASE:~0,-1%"
-set "SCRIPT=%BASE%\Manutenzione_PRO_MAX.ps1"
 
 :: ============================================================
-:: CREAZIONE / SOVRASCRITTURA COLLEGAMENTO SUL DESKTOP
+:: CREAZIONE / SOVRASCRITTURA COLLEGAMENTO SUL DESKTOP (DISABILITATO) Basta cambiare 0==1 in 1==1:
 :: ============================================================
-set "LINK_NAME=PRO MAX Maintenance"
-set "DESKTOP=%USERPROFILE%\Desktop"
-set "LINK_PATH=%DESKTOP%\%LINK_NAME%.lnk"
-
-:: Elimina il collegamento esistente (se presente)
-if exist "%LINK_PATH%" del "%LINK_PATH%"
-
-:: Crea il nuovo collegamento
-echo Creazione collegamento sul desktop...
-powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%LINK_PATH%'); $Shortcut.TargetPath = '%~f0'; $Shortcut.WorkingDirectory = '%~dp0'; $Shortcut.IconLocation = 'imageres.dll,15'; $Shortcut.Save()"
-echo [OK] Collegamento creato: %LINK_PATH%
-echo.
+if 0==1 (
+    set "LINK_NAME=PRO MAX Maintenance"
+    set "DESKTOP=%USERPROFILE%\Desktop"
+    set "LINK_PATH=%DESKTOP%\%LINK_NAME%.lnk"
+    if exist "%LINK_PATH%" del "%LINK_PATH%"
+    echo Creazione collegamento sul desktop...
+    powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%LINK_PATH%'); $Shortcut.TargetPath = '%~f0'; $Shortcut.WorkingDirectory = '%~dp0'; $Shortcut.IconLocation = 'imageres.dll,15'; $Shortcut.Save()"
+    echo [OK] Collegamento creato: %LINK_PATH%
+    echo.
+)
+) else (
+    echo [INFO] Collegamento non presente sul desktop. Non ne verrà creato uno nuovo.
+    echo.
+)
 
 :: ============================================================
-:: VERIFICA PRESENZA POWERSHELL 7 (PRIMA DI QUALSIASI COSA)
+:: VERIFICA PRESENZA POWERSHELL 7
 :: ============================================================
 set "PWSH="
 if exist "%ProgramFiles%\PowerShell\7\pwsh.exe" (
@@ -38,7 +39,7 @@ if %errorlevel% equ 0 (
 )
 
 :: ============================================================
-:: POWERSHELL 7 NON TROVATO → RICHIEDI ADMIN PER INSTALLARE
+:: POWERSHELL 7 NON TROVATO → RICHIEDI ADMIN
 :: ============================================================
 cls
 echo:
@@ -59,7 +60,7 @@ if %errorlevel% neq 0 (
 )
 
 :: ============================================================
-:: INSTALLAZIONE POWERSHELL 7 (con privilegi admin)
+:: INSTALLAZIONE POWERSHELL 7
 :: ============================================================
 cls
 echo:
@@ -126,7 +127,7 @@ pause
 exit /b
 
 :: ============================================================
-:: POWERSHELL 7 PRESENTE → AVVIO DIRETTO (senza admin)
+:: POWERSHELL 7 TROVATO
 :: ============================================================
 :PWSH_TROVATO
 echo:
@@ -140,21 +141,34 @@ echo ============================================================
 echo SBLOCCO FILE E CARTELLE
 echo ============================================================
 echo:
-echo Rimozione flag "blocca" da:
+echo Rimozione flag "blocco" da:
 echo %BASE%
-echo:
+echo.
 
-"%PWSH%" -NoProfile -Command "Get-ChildItem -Path '%BASE%' -Recurse -File | Unblock-File"
+:: ✅ TRUCCO INFALLIBILE: Ci spostiamo nella cartella del programma.
+:: Il comando CD gestisce benissimo le virgolette e le parentesi.
+cd /d "%BASE%"
 
-if errorlevel 1 (
+set "UNBLOCK_PATH=%BASE%"
+set "TEMP_PS1=%TEMP%\unblock_%RANDOM%.ps1"
+
+:: Crea il file ps1 temporaneo per lo sblocco
+> "%TEMP_PS1%" echo Get-ChildItem -LiteralPath $env:UNBLOCK_PATH -Recurse -File -ErrorAction SilentlyContinue ^| ForEach-Object ^{ Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue ^}
+
+:: Esegue lo sblocco
+"%PWSH%" -NoProfile -ExecutionPolicy Bypass -File "%TEMP_PS1%"
+if exist "%TEMP_PS1%" del "%TEMP_PS1%" 2>nul
+
+if %errorlevel% neq 0 (
     echo Attenzione: alcuni file potrebbero non essere sbloccati.
 ) else (
     echo OK: tutti i file sbloccati.
 )
 
-if not exist "%SCRIPT%" (
+:: Controlla se lo script esiste (usando solo il nome file, senza_percorsi_lunghi)
+if not exist "Manutenzione_PRO_MAX.ps1" (
     echo:
-    echo ERRORE: %SCRIPT% non trovato.
+    echo ERRORE: Manutenzione_PRO_MAX.ps1 non trovato.
     pause
     exit /b
 )
@@ -165,11 +179,12 @@ echo AVVIO SCRIPT (PowerShell 7)
 echo ============================================================
 echo:
 echo PowerShell: %PWSH%
-echo Script:     %SCRIPT%
-echo:
+echo Script:     Manutenzione_PRO_MAX.ps1
+echo.
 
-:: Esegue lo script normalmente (senza forzare admin)
-"%PWSH%" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%"
+:: ✅ AVVIO FINALE ASSOLUTAMENTE SICURO:
+:: Non passiamo più C:\Program Files (x86)\... a PowerShell.
+:: Gli passiamo SOLO il nome del file. Essendo già nella cartella giusta, funziona!
+"%PWSH%" -NoProfile -ExecutionPolicy Bypass -File "Manutenzione_PRO_MAX.ps1"
 
-:: La finestra si chiuderà automaticamente al termine dello script
 exit /b
