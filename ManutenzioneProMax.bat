@@ -8,14 +8,14 @@ set "BASE=%BASE:~0,-1%"
 :: ============================================================
 :: CREAZIONE / SOVRASCRITTURA COLLEGAMENTO SUL DESKTOP (DISABILITATO) Basta cambiare 0==1 in 1==1:
 :: ============================================================
-if 0==1 (
-    set "LINK_NAME=PRO MAX Maintenance"
-    set "DESKTOP=%USERPROFILE%\Desktop"
-    set "LINK_PATH=%DESKTOP%\%LINK_NAME%.lnk"
-    if exist "%LINK_PATH%" del "%LINK_PATH%"
+if 1==1 (
     echo Creazione collegamento sul desktop...
-    powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%LINK_PATH%'); $Shortcut.TargetPath = '%~f0'; $Shortcut.WorkingDirectory = '%~dp0'; $Shortcut.IconLocation = 'imageres.dll,15'; $Shortcut.Save()"
-    echo [OK] Collegamento creato: %LINK_PATH%
+    powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Desktop = [Environment]::GetFolderPath('Desktop'); $LinkPath = Join-Path $Desktop 'PRO MAX Maintenance.lnk'; $Shortcut = $WshShell.CreateShortcut($LinkPath); $Shortcut.TargetPath = '%~f0'; $Shortcut.WorkingDirectory = '%~dp0'; $Shortcut.IconLocation = 'imageres.dll,15'; $Shortcut.Save()"
+    if errorlevel 1 (
+        echo [ERRORE] Impossibile creare il collegamento.
+    ) else (
+        echo [OK] Collegamento creato su desktop.
+    )
     echo.
 ) else (
     echo [INFO] Collegamento non presente sul desktop. Non ne verrà creato uno nuovo.
