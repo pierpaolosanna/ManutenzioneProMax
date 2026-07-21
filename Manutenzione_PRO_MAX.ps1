@@ -399,13 +399,31 @@ function Do-FullUpdate {
         $backupDir = Join-Path $localDir "backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
         New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
         Log "[OK] Backup creato in: $backupDir"
-        Get-ChildItem -Path $localDir -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
-            if ($_.FullName -match [regex]::Escape($backupDir)) { return }
-            $relativePath = $_.FullName.Substring($localDir.Length + 1)
-            $backupFile = Join-Path $backupDir $relativePath
-            if ($_.PSIsContainer) { New-Item -ItemType Directory -Force -Path $backupFile -ErrorAction SilentlyContinue | Out-Null }
-            else { $backupParent = Split-Path $backupFile -Parent; if (-not (Test-Path $backupParent)) { New-Item -ItemType Directory -Force -Path $backupParent | Out-Null }; Copy-Item -Path $_.FullName -Destination $backupFile -Force -ErrorAction SilentlyContinue }
-        }
+		Get-ChildItem -Path $localDir -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
+			# Salta la cartella di backup stessa
+			if ($_.FullName -match [regex]::Escape($backupDir)) { return }
+			$relativePath = $_.FullName.Substring($localDir.Length + 1)
+			# Controlla se il percorso contiene una directory che inizia con "backup"
+			$skip = $false
+			$segments = $relativePath -split "\\"
+			foreach ($seg in $segments) {
+				if ($seg -match '^backup') {
+					$skip = $true
+					break
+				}
+			}
+			if ($skip) { return }
+			$backupFile = Join-Path $backupDir $relativePath
+			if ($_.PSIsContainer) {
+				New-Item -ItemType Directory -Force -Path $backupFile -ErrorAction SilentlyContinue | Out-Null
+			} else {
+				$backupParent = Split-Path $backupFile -Parent
+				if (-not (Test-Path $backupParent)) {
+					New-Item -ItemType Directory -Force -Path $backupParent | Out-Null
+				}
+				Copy-Item -Path $_.FullName -Destination $backupFile -Force -ErrorAction SilentlyContinue
+			}
+		}
         Log "[OK] Backup di tutti i file completato."
         $apiUrl = "https://api.github.com/repos/$($script:repoOwner)/$($script:repoName)/contents/"
         Log "[>] Download ricorsivo della repository..."
