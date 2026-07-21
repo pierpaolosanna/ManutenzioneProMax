@@ -29,7 +29,8 @@ function Log-Color {
         [string]$TextBefore,
         [string]$TextToColor,
         [string]$TextAfter = "",
-        [System.Drawing.Color]$Color
+        [System.Drawing.Color]$Color,
+        [string]$FontStyle = "Regular"
     )
     $rtb = $script:logBox
     if ($rtb -and $rtb.GetType().Name -eq "RichTextBox") {
@@ -37,16 +38,18 @@ function Log-Color {
         $startIdx = $rtb.TextLength
         $rtb.AppendText($TextToColor)
         $rtb.Select($startIdx, $TextToColor.Length)
-        $rtb.SelectionColor = $Color
+        if ($Color) { $rtb.SelectionColor = $Color }
+        if ($FontStyle -eq "Bold") {
+            $rtb.SelectionFont = New-Object System.Drawing.Font($rtb.Font.FontFamily, $rtb.Font.Size, [System.Drawing.FontStyle]::Bold)
+        }
         $rtb.SelectionLength = 0
-        $rtb.SelectionColor = $script:fgColor
+        $rtb.SelectionColor = $rtb.ForeColor
         $rtb.AppendText($TextAfter + "`r`n")
         $rtb.ScrollToCaret()
     } else {
         Log "$TextBefore$TextToColor$TextAfter"
     }
 }
-
 # ---------- FUNZIONE DI INIZIALIZZAZIONE UI ----------
 function Set-CoreUI {
     param(
