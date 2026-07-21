@@ -22,7 +22,7 @@ if (-not $scriptRoot) { $scriptRoot = $PWD.Path }
 
 # Modulo Core (deve essere caricato per primo)
 $corePath = Join-Path $scriptRoot "Modules\Core.psm1"
-if (Test-Path $corePath) { Import-Module $corePath -Force -ErrorAction Stop } else { throw "Core.psm1 non trovato!" }
+if (Test-Path $corePath) { Import-Module $corePath -Force -ErrorAction Stop -WarningAction SilentlyContinue } else { throw "Core.psm1 non trovato!" }
 Write-Host "[OK] Caricato Core.psm1" -ForegroundColor Green
 
 # Carica gli altri moduli
@@ -32,7 +32,7 @@ foreach ($mod in $modules) {
     $modPath = Join-Path $scriptRoot "Modules\$mod.psm1"
     if (Test-Path $modPath) {
         try {
-            Import-Module $modPath -Force -ErrorAction Stop
+            Import-Module $modPath -Force -ErrorAction Stop -WarningAction SilentlyContinue
             Write-Host "[OK] Caricato $mod.psm1" -ForegroundColor Green
         } catch {
             Write-Host "[X] ERRORE caricamento $mod.psm1 : $($_.Exception.Message)" -ForegroundColor Red
@@ -492,6 +492,12 @@ function Build-GUI {
 
     # ---- INIZIALIZZA CORE UI ----
     Set-CoreUI -LogBox $script:logBox -ProgressBar $script:progressBar -ProgressLabel $script:progressLabel -StatusLabel $script:statusLabel -Form $script:form -LogFile $logFile
+	# Rendi disponibili le variabili UI a tutti i moduli
+		$global:logBox = $script:logBox
+		$global:progressBar = $script:progressBar
+		$global:progressLabel = $script:progressLabel
+		$global:statusLabel = $script:statusLabel
+		$global:form = $script:form
 
     # ---- FUNZIONE UPDATE-BUTTONS ----
     function Update-Buttons {
