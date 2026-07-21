@@ -238,7 +238,6 @@ ManutenzioneProMax/
 └── version.txt # Versione corrente (3.1.0)
 
 ---
-
 ## 📦 Requisiti
 
 - Windows 10 o 11
@@ -253,39 +252,31 @@ ManutenzioneProMax/
 
 ### Esecuzione
 1. Scaricare tutti i file nella stessa cartella (inclusa la cartella `Modules/`)
-2. Eseguire `Manutenzione_PRO_MAX.ps1` con PowerShell (tasto destro → "Esegui con PowerShell")
-3. Per tutte le funzionalità, cliccare su **"Eleva Admin"** per ottenere privilegi amministrativi
-4. Se PowerShell 7 non è presente, verrà installato automaticamente
+2. Eseguire **`ManutenzioneProMax.bat`** (doppio clic) per avviare lo strumento
+   - Il batch avvia automaticamente PowerShell con i permessi necessari
+   - Se PowerShell 7 non è presente, verrà installato automaticamente
+3. Per tutte le funzionalità, cliccare su **"Eleva Admin"** all'interno dello script per ottenere privilegi amministrativi
 
-### Auto-aggiornamento
-- **Full Update Script**: Aggiorna TUTTI i file del repository (script, moduli, batch, README, LICENSE)
-- **Backup automatico**: Prima di ogni aggiornamento viene creato un backup nella cartella `backup_*`
-- **Esclusione**: Le cartelle che iniziano con `backup` vengono automaticamente escluse dal backup
+### Esecuzione alternativa (solo per sviluppatori)
+Se si desidera eseguire lo script direttamente:
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\Manutenzione_PRO_MAX.ps1
+Auto-aggiornamento
+Full Update Script: Aggiorna TUTTI i file del repository (script, moduli, batch, README, LICENSE)
 
----
+Backup automatico: Prima di ogni aggiornamento viene creato un backup nella cartella backup_*
 
-## 📈 Versioni
+Esclusione: Le cartelle che iniziano con backup vengono automaticamente escluse dal backup
 
-| Versione | Data | Novità |
-|----------|------|--------|
-| **3.1.0** | 2024-07-21 | Architettura modulare, Scansione Rete Pro, correzioni Blacklist, Ping Test, colori log |
-| 3.0.5 | 2024-07-15 | Correzioni e ottimizzazioni |
-| 3.0.4 | 2024-07-10 | Aggiunto Full Update Script, migliorato Upgrade Total |
-| 3.0.3 | 2024-07-05 | Modularità, AI Chat, Ricerca File, DPI Scaling |
+📈 Versioni
+Versione	Data	Novità
+3.1.0	2024-07-21	Architettura modulare, Scansione Rete Pro, correzioni Blacklist, Ping Test, colori log
+3.0.5	2024-07-15	Correzioni e ottimizzazioni
+3.0.4	2024-07-10	Aggiunto Full Update Script, migliorato Upgrade Total
+3.0.3	2024-07-05	Modularità, AI Chat, Ricerca File, DPI Scaling
+🤝 Contributi
+Segnalazioni di bug e richieste di funzionalità sono benvenute tramite GitHub Issues.
 
----
+📄 Licenza
+MIT License - vedi il file LICENSE per i dettagli.
 
-## 🤝 Contributi
-
-Segnalazioni di bug e richieste di funzionalità sono benvenute tramite [GitHub Issues](https://github.com/pierpaolosanna/ManutenzioneProMax/issues).
-
----
-
-## 📄 Licenza
-
-MIT License - vedi il file [LICENSE](LICENSE) per i dettagli.
-
----
-
-**© 2024 Pierpaolo Sanna**  
-**Manutenzione PRO MAX - All-in-one Windows maintenance tool**
