@@ -1,11 +1,99 @@
 # ============================================================
 # RETE.psm1 - Funzioni di rete (DNS, IP, WiFi, SpeedTest, Whois, Blacklist, Traceroute, CambiaDNS)
-# Versione: 1.0.0
+# Versione: 1.0.5 - Blacklist con lista dettagliata delle segnalazioni
 # ============================================================
 
+# ---------- GESTIONE MODULI PER BLACKLIST ----------
+function Ensure-BlacklistModules {
+    <#
+    .SYNOPSIS
+        Verifica se i moduli per Blacklist Check sono installati e caricabili.
+        Se mancano, esegue install-github-modules.ps1.
+        ATTENZIONE: L'installazione può richiedere alcuni minuti.
+    #>
+    $neededModules = @('PSSharedGoods', 'PSBlackListChecker')
+    $allOk = $true
+    
+    # Verifica presenza e carica i moduli
+    foreach ($mod in $neededModules) {
+        if (-not (Get-Module -Name $mod -ListAvailable -ErrorAction SilentlyContinue)) {
+            $allOk = $false
+            Log "[!] Modulo $mod non installato." $global:warningColor
+        } else {
+            try {
+                Import-Module -Name $mod -Force -ErrorAction Stop | Out-Null
+                Log "[OK] $mod caricato." $global:successColor
+            } catch {
+                $allOk = $false
+                Log "[!] $mod presente ma non caricabile: $($_.Exception.Message)" $global:warningColor
+            }
+        }
+    }
+    
+    if ($allOk) {
+        return $true
+    }
+    
+    Log "==============================================================================================="
+    Log "[i] MODULI PER BLACKLIST CHECK NON TROVATI O NON VALIDI" $global:warningColor
+    Log "[i] Avvio installazione automatica. Operazione può richiedere 2-5 minuti..." $global:infoColor
+    Log "[i] Si prega di attendere. Non chiudere la finestra." $global:infoColor
+    Log "==============================================================================================="
+    Flush-LogBuffer; Pump-UI
+    
+    $installScript = Join-Path $global:scriptRoot "install-github-modules.ps1"
+    if (-not (Test-Path $installScript)) {
+        Log "[X] install-github-modules.ps1 non trovato in $global:scriptRoot" $global:exitColor
+        Log "[i] Scarica manualmente lo script da GitHub o esegui 'Full Update'." $global:infoColor
+        return $false
+    }
+    
+    $scope = if ($global:isAdmin) { 'AllUsers' } else { 'CurrentUser' }
+    Log "[i] Esecuzione: & `"$installScript`" -Scope $scope -ForceReinstall" $global:infoColor
+    Log "[i] Attendere... il download dei moduli può richiedere alcuni minuti." $global:infoColor
+    Flush-LogBuffer; Pump-UI
+    
+    try {
+        $output = & $installScript -Scope $scope -ForceReinstall 2>&1
+        Log-Output $output
+        
+        # Verifica finale
+        $allOk = $true
+        foreach ($mod in $neededModules) {
+            if (-not (Get-Module -Name $mod -ListAvailable -ErrorAction SilentlyContinue)) {
+                $allOk = $false
+                Log "[X] Modulo $mod non trovato dopo l'installazione." $global:exitColor
+            } else {
+                try {
+                    Import-Module -Name $mod -Force -ErrorAction Stop | Out-Null
+                    Log "[OK] $mod caricato dopo installazione." $global:successColor
+                } catch {
+                    $allOk = $false
+                    Log "[X] $mod installato ma non caricabile: $($_.Exception.Message)" $global:exitColor
+                }
+            }
+        }
+        
+        if ($allOk) {
+            Log "==============================================================================================="
+            Log "[OK] MODULI PER BLACKLIST CHECK INSTALLATI E CARICATI CON SUCCESSO!" $global:successColor
+            Log "==============================================================================================="
+            return $true
+        } else {
+            Log "[X] Installazione moduli fallita." $global:exitColor
+            Log "[i] Verifica la connessione Internet e riprova." $global:infoColor
+            return $false
+        }
+    } catch {
+        Log "[X] Errore durante l'esecuzione di install-github-modules.ps1: $($_.Exception.Message)" $global:exitColor
+        return $false
+    }
+}
+
+# ---------- FUNZIONI RETE ----------
 function Do-FlushDNS {
     if ($script:isClosing -or (Test-Cancel)) { return }
-    Update-Status "[...] DNS..." $networkColor
+    Update-Status "[...] DNS..." $global:networkColor
     Flush-LogBuffer; Pump-UI
     Log ""; Log "==============================================================================================="; Log "[>] Flush DNS"; Log "==============================================================================================="
     try {
@@ -17,13 +105,13 @@ function Do-FlushDNS {
     }
     Log "==============================================================================================="; Log ""
     Update-Progress 100
-    Update-Status "[OK] DNS" $successColor
+    Update-Status "[OK] DNS" $global:successColor
     Flush-LogBuffer; Pump-UI
 }
 
 function Do-RenewIP {
     if ($script:isClosing -or (Test-Cancel)) { return }
-    Update-Status "[...] IP..." $networkColor
+    Update-Status "[...] IP..." $global:networkColor
     Flush-LogBuffer; Pump-UI
     Log ""; Log "==============================================================================================="; Log "[>] Rinnovo IP"; Log "==============================================================================================="
     try {
@@ -39,13 +127,13 @@ function Do-RenewIP {
     }
     Log "==============================================================================================="; Log ""
     Update-Progress 100
-    Update-Status "[OK] IP" $successColor
+    Update-Status "[OK] IP" $global:successColor
     Flush-LogBuffer; Pump-UI
 }
 
 function Do-InfoIP {
     if ($script:isClosing -or (Test-Cancel)) { return }
-    Update-Status "[...] Info..." $infoColor
+    Update-Status "[...] Info..." $global:infoColor
     Flush-LogBuffer; Pump-UI
     Log ""; Log "==============================================================================================="; Log "[>] Info Rete"; Log "==============================================================================================="
     try {
@@ -64,18 +152,18 @@ function Do-InfoIP {
     }
     Log "==============================================================================================="; Log ""
     Update-Progress 100
-    Update-Status "[OK] Info" $successColor
+    Update-Status "[OK] Info" $global:successColor
     Flush-LogBuffer; Pump-UI
 }
 
 function Do-ResetWinsock {
     if ($script:isClosing -or (Test-Cancel)) { return }
-    if (-not $isAdmin) {
+    if (-not $global:isAdmin) {
         Log "[X] Admin."
-        Update-Status "[!] Admin" $warningColor
+        Update-Status "[!] Admin" $global:warningColor
         Flush-LogBuffer; Update-Progress 100; return
     }
-    Update-Status "[...] Winsock..." $networkColor
+    Update-Status "[...] Winsock..." $global:networkColor
     Flush-LogBuffer; Pump-UI
     Log ""; Log "==============================================================================================="; Log "[>] Winsock Reset"; Log "==============================================================================================="
     try {
@@ -87,14 +175,14 @@ function Do-ResetWinsock {
     }
     Log "==============================================================================================="; Log ""
     Update-Progress 100
-    Update-Status "[OK] Winsock" $successColor
+    Update-Status "[OK] Winsock" $global:successColor
     Flush-LogBuffer; Pump-UI
 }
 
 function Do-NetworkReset {
     if ($script:isClosing -or (Test-Cancel)) { return }
-    if (-not $isAdmin) { Log "[X] Admin richiesto"; Update-Progress 100; return }
-    Update-Status "[...] Reset Rete..." $networkColor
+    if (-not $global:isAdmin) { Log "[X] Admin richiesto"; Update-Progress 100; return }
+    Update-Status "[...] Reset Rete..." $global:networkColor
     Flush-LogBuffer; Pump-UI
     Log ""; Log "==============================================================================================="; Log "[>] RESET COMPLETO RETE"; Log "==============================================================================================="
     $backupDir = Join-Path $env:TEMP "network_backup_$(Get-Date -Format 'yyyyMMdd')"
@@ -119,13 +207,13 @@ function Do-NetworkReset {
     Log ""; Log "[OK] Reset completato. Riavvio consigliato."
     Log "==============================================================================================="; Log ""
     Update-Progress 100
-    Update-Status "[OK] Reset rete" $successColor
+    Update-Status "[OK] Reset rete" $global:successColor
     Flush-LogBuffer; Pump-UI
 }
 
 function Do-WifiPasswords {
     if ($script:isClosing -or (Test-Cancel)) { return }
-    Update-Status "[...] Wi-Fi..." $networkColor
+    Update-Status "[...] Wi-Fi..." $global:networkColor
     Flush-LogBuffer; Pump-UI
     Log ""; Log "==============================================================================================="; Log "[>] Password Wi-Fi"; Log "==============================================================================================="
     try {
@@ -135,7 +223,7 @@ function Do-WifiPasswords {
             Log "[i] Nessun profilo."
             Log "==============================================================================================="
             Update-Progress 100
-            Update-Status "[OK]" $successColor
+            Update-Status "[OK]" $global:successColor
             Flush-LogBuffer; Pump-UI
             return
         }
@@ -163,7 +251,7 @@ function Do-WifiPasswords {
     }
     Log ""; Log "==============================================================================================="
     Update-Progress 100
-    Update-Status "[OK] Wi-Fi" $successColor
+    Update-Status "[OK] Wi-Fi" $global:successColor
     Flush-LogBuffer; Pump-UI
 }
 
@@ -177,7 +265,6 @@ function Do-SpeedTest {
         @{ N = "Cloudflare"; I = "1.1.1.1" },
         @{ N = "OpenDNS"; I = "208.67.222.222" }
     )
-    # Determina la proprietà da usare (PowerShell 7 vs 5.1)
     $propName = if ($PSVersionTable.PSVersion.Major -ge 7) { "Latency" } else { "ResponseTime" }
     foreach ($t in $targets) {
         if (Test-Cancel) { return }
@@ -196,10 +283,9 @@ function Do-SpeedTest {
     Flush-LogBuffer; Pump-UI
 }
 
-
 function Do-SpeedInternet {
     if ($script:isClosing -or (Test-Cancel)) { return }
-    Update-Status "[...] Speedtest..." $networkColor
+    Update-Status "[...] Speedtest..." $global:networkColor
     Flush-LogBuffer; Pump-UI
     Log ""; Log "==============================================================================================="; Log "[>] Speedtest Cloudflare"; Log "==============================================================================================="
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -241,13 +327,13 @@ function Do-SpeedInternet {
     Log ""; Log " Ping ${latency}ms | DL ${dl} | UP ${ul} Mbps"
     Log "==============================================================================================="; Log ""
     Update-Progress 100
-    Update-Status "[OK] DL $dl / UP $ul" $successColor
+    Update-Status "[OK] DL $dl / UP $ul" $global:successColor
     Flush-LogBuffer; Pump-UI
 }
 
 function Do-SpeedOokla {
     if ($script:isClosing -or (Test-Cancel)) { return }
-    Update-Status "[...] Speedtest Ookla..." $networkColor
+    Update-Status "[...] Speedtest Ookla..." $global:networkColor
     Flush-LogBuffer; Pump-UI
     Log ""; Log "==============================================================================================="; Log "[>] SPEEDTEST OOKLA (dettagliato)"; Log "==============================================================================================="
     try {
@@ -258,11 +344,11 @@ function Do-SpeedOokla {
         Log " [??] IP Pubblico : non rilevato (verifica connessione)"
     }
     Log ""
-    $speedtestExe = Join-Path $scriptRoot "lib" "speedtest.exe"
+    $speedtestExe = Join-Path $global:scriptRoot "lib" "speedtest.exe"
     if (-not (Test-Path $speedtestExe)) {
-        Log "[!] speedtest.exe non trovato in $scriptRoot\lib"
+        Log "[!] speedtest.exe non trovato in $global:scriptRoot\lib"
         Log "[i] Esegui 'Full Update' per scaricare i file necessari."
-        Update-Status "[X] speedtest.exe mancante" $exitColor
+        Update-Status "[X] speedtest.exe mancante" $global:exitColor
         Flush-LogBuffer; Pump-UI
         Update-Progress 100
         return
@@ -273,7 +359,7 @@ function Do-SpeedOokla {
         $process = Start-Process -FilePath $speedtestExe -ArgumentList "--accept-license --accept-gdpr --format=json" -Wait -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\speedtest_output.json"
         if ($process.ExitCode -ne 0) {
             Log "[X] Errore nell'esecuzione di speedtest (codice: $($process.ExitCode))"
-            Update-Status "[X] Errore speedtest" $exitColor
+            Update-Status "[X] Errore speedtest" $global:exitColor
             Flush-LogBuffer; Pump-UI
             Update-Progress 100
             return
@@ -281,7 +367,7 @@ function Do-SpeedOokla {
         $json = Get-Content "$env:TEMP\speedtest_output.json" -Raw | ConvertFrom-Json
         if (-not $json) {
             Log "[X] Impossibile leggere i risultati."
-            Update-Status "[X] Errore parsing" $exitColor
+            Update-Status "[X] Errore parsing" $global:exitColor
             Update-Progress 100
             return
         }
@@ -305,10 +391,10 @@ function Do-SpeedOokla {
         Log " Jitter      : $jitterMs ms"
         Log " Packet Loss : $([Math]::Round($packetLoss, 2))%"
         Log "---------------------------------------------"; Log ""
-        Update-Status "[OK] DL $downloadMbps / UP $uploadMbps Mbps" $successColor
+        Update-Status "[OK] DL $downloadMbps / UP $uploadMbps Mbps" $global:successColor
     } catch {
         Log "[X] Errore durante il test: $($_.Exception.Message)"
-        Update-Status "[X] Errore" $exitColor
+        Update-Status "[X] Errore" $global:exitColor
     }
     try { Remove-Item "$env:TEMP\speedtest_output.json" -Force -ErrorAction SilentlyContinue } catch { }
     Log "==============================================================================================="; Log ""
@@ -325,28 +411,28 @@ function Do-Traceroute {
     $inputForm.FormBorderStyle = "FixedDialog"
     $inputForm.MaximizeBox = $false
     $inputForm.MinimizeBox = $false
-    $inputForm.BackColor = $bgColor
-    $inputForm.ForeColor = $fgColor
+    $inputForm.BackColor = $global:bgColor
+    $inputForm.ForeColor = $global:fgColor
     $inputForm.TopMost = $true
     $lbl = New-Object System.Windows.Forms.Label
     $lbl.Text = "Inserisci indirizzo IP o dominio da tracciare:"
     $lbl.Location = New-Object System.Drawing.Point(20, 20)
     $lbl.Size = New-Object System.Drawing.Size(340, 22)
-    $lbl.ForeColor = $fgColor
+    $lbl.ForeColor = $global:fgColor
     $inputForm.Controls.Add($lbl)
     $txtTarget = New-Object System.Windows.Forms.TextBox
     $txtTarget.Text = "8.8.8.8"
     $txtTarget.Location = New-Object System.Drawing.Point(20, 50)
     $txtTarget.Size = New-Object System.Drawing.Size(340, 26)
     $txtTarget.Font = New-Object System.Drawing.Font("Consolas", 12)
-    $txtTarget.BackColor = $bgCard
-    $txtTarget.ForeColor = $fgColor
+    $txtTarget.BackColor = $global:bgCard
+    $txtTarget.ForeColor = $global:fgColor
     $inputForm.Controls.Add($txtTarget)
     $btnOK = New-Object System.Windows.Forms.Button
     $btnOK.Text = "Avvia"
     $btnOK.Location = New-Object System.Drawing.Point(20, 95)
     $btnOK.Size = New-Object System.Drawing.Size(100, 32)
-    $btnOK.BackColor = $accentColor
+    $btnOK.BackColor = $global:accentColor
     $btnOK.ForeColor = [System.Drawing.Color]::White
     $btnOK.FlatStyle = "Flat"
     $btnOK.DialogResult = [System.Windows.Forms.DialogResult]::OK
@@ -356,7 +442,7 @@ function Do-Traceroute {
     $btnCancel.Text = "Annulla"
     $btnCancel.Location = New-Object System.Drawing.Point(140, 95)
     $btnCancel.Size = New-Object System.Drawing.Size(100, 32)
-    $btnCancel.BackColor = $exitColor
+    $btnCancel.BackColor = $global:exitColor
     $btnCancel.ForeColor = [System.Drawing.Color]::White
     $btnCancel.FlatStyle = "Flat"
     $btnCancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
@@ -374,21 +460,21 @@ function Do-Traceroute {
         Update-Progress 100
         return
     }
-    Update-Status "[...] Traceroute verso $target..." $networkColor
+    Update-Status "[...] Traceroute verso $target..." $global:networkColor
     Flush-LogBuffer; Pump-UI
     Log ""; Log "==============================================================================================="; Log "[>] TRACEROUTE VERSO $target"; Log "==============================================================================================="
     Run-ProcessRealtime "tracert" $target "Traceroute verso $target" 0 100
     Log "==============================================================================================="; Log ""
     Update-Progress 100
-    Update-Status "[OK] Traceroute completato" $successColor
+    Update-Status "[OK] Traceroute completato" $global:successColor
     Flush-LogBuffer; Pump-UI
 }
 
 function Do-ChangeDNS {
     if ($script:isClosing -or (Test-Cancel)) { return }
-    if (-not $isAdmin) {
+    if (-not $global:isAdmin) {
         Log "[X] Per cambiare i DNS servono privilegi amministrativi."
-        Update-Status "[!] Admin richiesto" $warningColor
+        Update-Status "[!] Admin richiesto" $global:warningColor
         Flush-LogBuffer; Pump-UI
         Update-Progress 100
         return
@@ -400,22 +486,22 @@ function Do-ChangeDNS {
     $inputForm.FormBorderStyle = "FixedDialog"
     $inputForm.MaximizeBox = $false
     $inputForm.MinimizeBox = $false
-    $inputForm.BackColor = $bgColor
-    $inputForm.ForeColor = $fgColor
+    $inputForm.BackColor = $global:bgColor
+    $inputForm.ForeColor = $global:fgColor
     $inputForm.TopMost = $true
     $lbl = New-Object System.Windows.Forms.Label
     $lbl.Text = "Seleziona il provider DNS:"
     $lbl.Location = New-Object System.Drawing.Point(20, 20)
     $lbl.Size = New-Object System.Drawing.Size(390, 22)
-    $lbl.ForeColor = $fgColor
+    $lbl.ForeColor = $global:fgColor
     $inputForm.Controls.Add($lbl)
     $cmbProviders = New-Object System.Windows.Forms.ComboBox
     $cmbProviders.Location = New-Object System.Drawing.Point(20, 50)
     $cmbProviders.Size = New-Object System.Drawing.Size(390, 26)
     $cmbProviders.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
     $cmbProviders.Font = New-Object System.Drawing.Font("Segoe UI", 11)
-    $cmbProviders.BackColor = $bgCard
-    $cmbProviders.ForeColor = $fgColor
+    $cmbProviders.BackColor = $global:bgCard
+    $cmbProviders.ForeColor = $global:fgColor
     $cmbProviders.Items.AddRange(@("Google DNS (8.8.8.8, 8.8.4.4)", "Cloudflare DNS (1.1.1.1, 1.0.0.1)", "OpenDNS (208.67.222.222, 208.67.220.220)", "Quad9 (9.9.9.9, 149.112.112.112)", "Personalizzato (inserisci manualmente)"))
     $cmbProviders.SelectedIndex = 0
     $inputForm.Controls.Add($cmbProviders)
@@ -423,30 +509,30 @@ function Do-ChangeDNS {
     $lblCustom.Text = "DNS Primario:"
     $lblCustom.Location = New-Object System.Drawing.Point(20, 95)
     $lblCustom.Size = New-Object System.Drawing.Size(150, 22)
-    $lblCustom.ForeColor = $fgColor
+    $lblCustom.ForeColor = $global:fgColor
     $lblCustom.Visible = $false
     $inputForm.Controls.Add($lblCustom)
     $txtPrimary = New-Object System.Windows.Forms.TextBox
     $txtPrimary.Location = New-Object System.Drawing.Point(20, 125)
     $txtPrimary.Size = New-Object System.Drawing.Size(180, 26)
     $txtPrimary.Font = New-Object System.Drawing.Font("Consolas", 12)
-    $txtPrimary.BackColor = $bgCard
-    $txtPrimary.ForeColor = $fgColor
+    $txtPrimary.BackColor = $global:bgCard
+    $txtPrimary.ForeColor = $global:fgColor
     $txtPrimary.Visible = $false
     $inputForm.Controls.Add($txtPrimary)
     $lblCustom2 = New-Object System.Windows.Forms.Label
     $lblCustom2.Text = "DNS Secondario:"
     $lblCustom2.Location = New-Object System.Drawing.Point(220, 95)
     $lblCustom2.Size = New-Object System.Drawing.Size(150, 22)
-    $lblCustom2.ForeColor = $fgColor
+    $lblCustom2.ForeColor = $global:fgColor
     $lblCustom2.Visible = $false
     $inputForm.Controls.Add($lblCustom2)
     $txtSecondary = New-Object System.Windows.Forms.TextBox
     $txtSecondary.Location = New-Object System.Drawing.Point(220, 125)
     $txtSecondary.Size = New-Object System.Drawing.Size(180, 26)
     $txtSecondary.Font = New-Object System.Drawing.Font("Consolas", 12)
-    $txtSecondary.BackColor = $bgCard
-    $txtSecondary.ForeColor = $fgColor
+    $txtSecondary.BackColor = $global:bgCard
+    $txtSecondary.ForeColor = $global:fgColor
     $txtSecondary.Visible = $false
     $inputForm.Controls.Add($txtSecondary)
     $cmbProviders.Add_SelectedIndexChanged({
@@ -468,7 +554,7 @@ function Do-ChangeDNS {
     $btnOK.Text = "Applica"
     $btnOK.Location = New-Object System.Drawing.Point(20, 175)
     $btnOK.Size = New-Object System.Drawing.Size(100, 32)
-    $btnOK.BackColor = $accentColor
+    $btnOK.BackColor = $global:accentColor
     $btnOK.ForeColor = [System.Drawing.Color]::White
     $btnOK.FlatStyle = "Flat"
     $btnOK.DialogResult = [System.Windows.Forms.DialogResult]::OK
@@ -478,7 +564,7 @@ function Do-ChangeDNS {
     $btnCancel.Text = "Annulla"
     $btnCancel.Location = New-Object System.Drawing.Point(140, 175)
     $btnCancel.Size = New-Object System.Drawing.Size(100, 32)
-    $btnCancel.BackColor = $exitColor
+    $btnCancel.BackColor = $global:exitColor
     $btnCancel.ForeColor = [System.Drawing.Color]::White
     $btnCancel.FlatStyle = "Flat"
     $btnCancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
@@ -503,7 +589,7 @@ function Do-ChangeDNS {
         if ($dnsPrimary -notmatch '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$') { Log "[X] DNS primario non valido: $dnsPrimary"; Update-Progress 100; return }
         if ($dnsSecondary -and $dnsSecondary -notmatch '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$') { Log "[X] DNS secondario non valido: $dnsSecondary"; Update-Progress 100; return }
     }
-    Update-Status "[...] Cambio DNS in corso..." $networkColor
+    Update-Status "[...] Cambio DNS in corso..." $global:networkColor
     Flush-LogBuffer; Pump-UI
     Log ""; Log "==============================================================================================="; Log "[>] CAMBIO DNS"; Log "==============================================================================================="
     Log "[i] DNS Primario    : $dnsPrimary"
@@ -512,7 +598,7 @@ function Do-ChangeDNS {
         $adapters = Get-NetAdapter -Physical | Where-Object { $_.Status -eq "Up" }
         if (-not $adapters) {
             Log "[X] Nessuna scheda di rete attiva trovata."
-            Update-Status "[X] Nessuna scheda" $exitColor
+            Update-Status "[X] Nessuna scheda" $global:exitColor
             Update-Progress 100
             return
         }
@@ -537,11 +623,11 @@ function Do-ChangeDNS {
         }
     } catch {
         Log "[X] Errore durante il cambio DNS: $($_.Exception.Message)"
-        Update-Status "[X] Errore" $exitColor
+        Update-Status "[X] Errore" $global:exitColor
     }
     Log "==============================================================================================="; Log ""
     Update-Progress 100
-    Update-Status "[OK] DNS cambiati" $successColor
+    Update-Status "[OK] DNS cambiati" $global:successColor
     Flush-LogBuffer; Pump-UI
 }
 
@@ -554,28 +640,28 @@ function Do-Whois {
     $inputForm.FormBorderStyle = "FixedDialog"
     $inputForm.MaximizeBox = $false
     $inputForm.MinimizeBox = $false
-    $inputForm.BackColor = $bgColor
-    $inputForm.ForeColor = $fgColor
+    $inputForm.BackColor = $global:bgColor
+    $inputForm.ForeColor = $global:fgColor
     $inputForm.TopMost = $true
     $lbl = New-Object System.Windows.Forms.Label
     $lbl.Text = "Inserisci indirizzo IP o dominio:"
     $lbl.Location = New-Object System.Drawing.Point(20, 20)
     $lbl.Size = New-Object System.Drawing.Size(360, 22)
-    $lbl.ForeColor = $fgColor
+    $lbl.ForeColor = $global:fgColor
     $inputForm.Controls.Add($lbl)
     $txtTarget = New-Object System.Windows.Forms.TextBox
     $txtTarget.Text = "google.com"
     $txtTarget.Location = New-Object System.Drawing.Point(20, 50)
     $txtTarget.Size = New-Object System.Drawing.Size(360, 26)
     $txtTarget.Font = New-Object System.Drawing.Font("Consolas", 12)
-    $txtTarget.BackColor = $bgCard
-    $txtTarget.ForeColor = $fgColor
+    $txtTarget.BackColor = $global:bgCard
+    $txtTarget.ForeColor = $global:fgColor
     $inputForm.Controls.Add($txtTarget)
     $btnOK = New-Object System.Windows.Forms.Button
     $btnOK.Text = "Cerca"
     $btnOK.Location = New-Object System.Drawing.Point(20, 90)
     $btnOK.Size = New-Object System.Drawing.Size(100, 32)
-    $btnOK.BackColor = $accentColor
+    $btnOK.BackColor = $global:accentColor
     $btnOK.ForeColor = [System.Drawing.Color]::White
     $btnOK.FlatStyle = "Flat"
     $btnOK.DialogResult = [System.Windows.Forms.DialogResult]::OK
@@ -585,7 +671,7 @@ function Do-Whois {
     $btnCancel.Text = "Annulla"
     $btnCancel.Location = New-Object System.Drawing.Point(140, 90)
     $btnCancel.Size = New-Object System.Drawing.Size(100, 32)
-    $btnCancel.BackColor = $exitColor
+    $btnCancel.BackColor = $global:exitColor
     $btnCancel.ForeColor = [System.Drawing.Color]::White
     $btnCancel.FlatStyle = "Flat"
     $btnCancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
@@ -603,7 +689,7 @@ function Do-Whois {
         Update-Progress 100
         return
     }
-    Update-Status "[...] Whois su $target..." $networkColor
+    Update-Status "[...] Whois su $target..." $global:networkColor
     Flush-LogBuffer; Pump-UI
     Log ""; Log "==============================================================================================="; Log "[>] WHOIS - $target"; Log "==============================================================================================="
     $whoisSuccess = $false
@@ -764,33 +850,17 @@ function Do-Whois {
     if (-not $whoisSuccess) {
         Log "[X] Nessuna informazione disponibile per '$target'."
         Log "[i] Verifica che il dominio/IP esista e che la connessione Internet sia attiva."
-        Update-Status "[X] Errore whois" $exitColor
+        Update-Status "[X] Errore whois" $global:exitColor
     }
     Log "==============================================================================================="; Log ""
     Update-Progress 100
-    Update-Status "[OK] Whois completato" $successColor
+    Update-Status "[OK] Whois completato" $global:successColor
     Flush-LogBuffer; Pump-UI
 }
 
+# ---------- BLACKLIST CHECK ----------
 function Do-BlacklistCheck {
     if ($script:isClosing -or (Test-Cancel)) { return }
-    function Log-Color {
-        param([string]$TextBefore, [string]$TextToColor, [string]$TextAfter = "", [System.Drawing.Color]$Color)
-        $rtb = $script:logBox
-        if ($rtb -and $rtb.GetType().Name -eq "RichTextBox") {
-            $rtb.AppendText($TextBefore)
-            $startIdx = $rtb.TextLength
-            $rtb.AppendText($TextToColor)
-            $rtb.Select($startIdx, $TextToColor.Length)
-            $rtb.SelectionColor = $Color
-            $rtb.SelectionLength = 0
-            $rtb.SelectionColor = $fgColor
-            $rtb.AppendText($TextAfter + "`r`n")
-            $rtb.ScrollToCaret()
-        } else {
-            Log "$TextBefore$TextToColor$TextAfter"
-        }
-    }
     $inputForm = New-Object System.Windows.Forms.Form
     $inputForm.Text = "Blacklist Check - Inserisci dominio o IP"
     $inputForm.Size = New-Object System.Drawing.Size(420, 180)
@@ -798,28 +868,28 @@ function Do-BlacklistCheck {
     $inputForm.FormBorderStyle = "FixedDialog"
     $inputForm.MaximizeBox = $false
     $inputForm.MinimizeBox = $false
-    $inputForm.BackColor = $bgColor
-    $inputForm.ForeColor = $fgColor
+    $inputForm.BackColor = $global:bgColor
+    $inputForm.ForeColor = $global:fgColor
     $inputForm.TopMost = $true
     $lbl = New-Object System.Windows.Forms.Label
     $lbl.Text = "Inserisci dominio o IP da verificare:"
     $lbl.Location = New-Object System.Drawing.Point(20, 20)
     $lbl.Size = New-Object System.Drawing.Size(360, 22)
-    $lbl.ForeColor = $fgColor
+    $lbl.ForeColor = $global:fgColor
     $inputForm.Controls.Add($lbl)
     $txtTarget = New-Object System.Windows.Forms.TextBox
     $txtTarget.Text = "google.com"
     $txtTarget.Location = New-Object System.Drawing.Point(20, 50)
     $txtTarget.Size = New-Object System.Drawing.Size(360, 26)
     $txtTarget.Font = New-Object System.Drawing.Font("Consolas", 12)
-    $txtTarget.BackColor = $bgCard
-    $txtTarget.ForeColor = $fgColor
+    $txtTarget.BackColor = $global:bgCard
+    $txtTarget.ForeColor = $global:fgColor
     $inputForm.Controls.Add($txtTarget)
     $btnOK = New-Object System.Windows.Forms.Button
     $btnOK.Text = "Verifica"
     $btnOK.Location = New-Object System.Drawing.Point(20, 90)
     $btnOK.Size = New-Object System.Drawing.Size(100, 32)
-    $btnOK.BackColor = $accentColor
+    $btnOK.BackColor = $global:accentColor
     $btnOK.ForeColor = [System.Drawing.Color]::White
     $btnOK.FlatStyle = "Flat"
     $btnOK.DialogResult = [System.Windows.Forms.DialogResult]::OK
@@ -829,7 +899,7 @@ function Do-BlacklistCheck {
     $btnCancel.Text = "Annulla"
     $btnCancel.Location = New-Object System.Drawing.Point(140, 90)
     $btnCancel.Size = New-Object System.Drawing.Size(100, 32)
-    $btnCancel.BackColor = $exitColor
+    $btnCancel.BackColor = $global:exitColor
     $btnCancel.ForeColor = [System.Drawing.Color]::White
     $btnCancel.FlatStyle = "Flat"
     $btnCancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
@@ -847,10 +917,52 @@ function Do-BlacklistCheck {
         Update-Progress 100
         return
     }
-    Update-Status "[...] Verifica blacklist per $target..." $securityColor
+    
+    # Array per raccogliere i nomi delle blacklist che segnalano
+    $segnalazioniList = @()
+    
+    Update-Status "[...] Verifica blacklist per $target..." $global:securityColor
     Flush-LogBuffer; Pump-UI
     Log ""; Log "==============================================================================================="; Log "[>] BLACKLIST CHECK Attendere - $target"; Log "==============================================================================================="
-    $moduleOk = Ensure-ModulesForBlacklist
+    
+    # Funzione Log-Color (locale)
+    function Log-Color {
+        param(
+            [string]$TextBefore,
+            [string]$TextToColor,
+            [string]$TextAfter = "",
+            [System.Drawing.Color]$Color,
+            [string]$FontStyle = "Regular"
+        )
+        $rtb = $global:logBox
+        if ($rtb -and $rtb.GetType().Name -eq "RichTextBox") {
+            $rtb.AppendText($TextBefore)
+            $startIdx = $rtb.TextLength
+            $rtb.AppendText($TextToColor)
+            $rtb.Select($startIdx, $TextToColor.Length)
+            $rtb.SelectionColor = $Color
+            if ($FontStyle -eq "Bold") {
+                $rtb.SelectionFont = New-Object System.Drawing.Font($rtb.Font.FontFamily, $rtb.Font.Size, [System.Drawing.FontStyle]::Bold)
+            }
+            $rtb.SelectionLength = 0
+            $rtb.SelectionColor = $global:fgColor   # Resetta al colore predefinito dei log
+            $rtb.AppendText($TextAfter + "`r`n")
+            $rtb.ScrollToCaret()
+        } else {
+            Log "$TextBefore$TextToColor$TextAfter"
+        }
+    }
+
+    # Verifica/installazione moduli
+    Log "[i] Verifica moduli per Blacklist Check. Se necessario, l'installazione può richiedere alcuni minuti." $global:infoColor
+    Flush-LogBuffer; Pump-UI
+    
+    $moduleOk = Ensure-BlacklistModules
+    if (-not $moduleOk) {
+        Log "[i] Installazione moduli non riuscita, uso fallback manuale." $global:warningColor
+    }
+    
+    # Risolvi IP
     $isIP = $target -match '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$'
     if ($isIP) {
         $ipToCheck = $target
@@ -860,12 +972,15 @@ function Do-BlacklistCheck {
             $ipToCheck = if ($dnsResult -is [System.Array]) { $dnsResult[0].IPAddress } else { $dnsResult.IPAddress }
         } catch {
             Log "[X] Errore risoluzione DNS: $($_.Exception.Message)"
-            Update-Status "[X] Errore DNS" $exitColor
+            Update-Status "[X] Errore DNS" $global:exitColor
             Update-Progress 100
             return
         }
     }
-    $moduleSuccess = $false; $moduleListCount = 0; $moduleListed = 0
+    
+    # ---- PSBlackListChecker (se disponibile) ----
+    $moduleListCount = 0
+    $moduleListed = 0
     if ($moduleOk) {
         Log ""; Log " [??] CONTROLLO CON PSBlackListChecker"
         Log " -------------------------------------------------------------"
@@ -878,21 +993,25 @@ function Do-BlacklistCheck {
                     $listName = if ($entry.BlackList) { $entry.BlackList } else { $entry.BlacklistName }
                     $isListed = [bool]$entry.IsListed
                     if ($isListed) {
-                        Log-Color -TextBefore " [??] $($listName.Trim()) : " -TextToColor "SEGNALATO" -Color ([System.Drawing.Color]::Red)
+                        Log-Color -TextBefore " [??] $($listName.Trim()) : " -TextToColor "SEGNALATO" -Color ([System.Drawing.Color]::Red) -FontStyle "Bold"
                         $moduleListed++
+                        $segnalazioniList += $listName.Trim()
                     } else {
-                        Log-Color -TextBefore " [?] $($listName.Trim()) : " -TextToColor "PULITO" -Color ([System.Drawing.Color]::Green)
+                        Log-Color -TextBefore " [?] $($listName.Trim()) : " -TextToColor "PULITO" -Color ([System.Drawing.Color]::Green) -FontStyle "Bold"
                     }
                     Pump-UI
                 }
-                $moduleSuccess = $true
             }
         } catch {
-            Log "[!] Errore PSBlackListChecker: $($_.Exception.Message)"
+            Log "[!] Errore PSBlackListChecker: $($_.Exception.Message)" $global:warningColor
         }
     }
-    Log ""; Log " [??] CONTROLLO MANUALE ESTESO (Top 16)"
+    
+    # ---- CONTROLLO MANUALE ESTESO (lista completa) ----
+    Log ""; Log " [??] CONTROLLO MANUALE ESTESO (completo)"
     Log " -------------------------------------------------------------"
+    
+    # Lista dei server DNSBL (70+ server)
     $fallbackLists = @(
         @{ Name = "Spamhaus ZEN"; QuerySuffix = "zen.spamhaus.org" },
         @{ Name = "Spamhaus DBL"; QuerySuffix = "dbl.spamhaus.org" },
@@ -909,26 +1028,96 @@ function Do-BlacklistCheck {
         @{ Name = "SEM Black"; QuerySuffix = "bl.semblack.com" },
         @{ Name = "Abuse.ro"; QuerySuffix = "abuse.ro" },
         @{ Name = "DRONE BL"; QuerySuffix = "dnsbl.dronebl.org" },
-        @{ Name = "Nix Spam"; QuerySuffix = "ix.dnsbl.manitu.net" }
+        @{ Name = "Nix Spam"; QuerySuffix = "ix.dnsbl.manitu.net" },
+        @{ Name = "CBL"; QuerySuffix = "cbl.abuseat.org" },
+        @{ Name = "NJABL"; QuerySuffix = "dnsbl.njabl.org" },
+        @{ Name = "WPBL"; QuerySuffix = "dnsbl.spfbl.net" },
+        @{ Name = "KELSEY"; QuerySuffix = "kelsey.net" },
+        @{ Name = "SWINOG"; QuerySuffix = "swinog.ch" },
+        @{ Name = "NoSolicitado"; QuerySuffix = "nosolicitado.com" },
+        @{ Name = "SORBS DUHL"; QuerySuffix = "dul.dnsbl.sorbs.net" },
+        @{ Name = "SORBS SMTP"; QuerySuffix = "smtp.dnsbl.sorbs.net" },
+        @{ Name = "SORBS WEB"; QuerySuffix = "web.dnsbl.sorbs.net" },
+        @{ Name = "SORBS ZOMBIE"; QuerySuffix = "zombie.dnsbl.sorbs.net" },
+        @{ Name = "SORBS BLOCK"; QuerySuffix = "block.dnsbl.sorbs.net" },
+        @{ Name = "SORBS HTTP"; QuerySuffix = "http.dnsbl.sorbs.net" },
+        @{ Name = "SORBS SOCKS"; QuerySuffix = "socks.dnsbl.sorbs.net" },
+        @{ Name = "SORBS MISC"; QuerySuffix = "misc.dnsbl.sorbs.net" },
+        @{ Name = "RBL"; QuerySuffix = "rbl.interserver.net" },
+        @{ Name = "SPAMRATS"; QuerySuffix = "spamrats.com" },
+        @{ Name = "SPAMRATS NOPTR"; QuerySuffix = "noptr.spamrats.com" },
+        @{ Name = "SPAMRATS DYNA"; QuerySuffix = "dyna.spamrats.com" },
+        @{ Name = "SPAMRATS SNARE"; QuerySuffix = "snare.spamrats.com" },
+        @{ Name = "SPAMRATS PYTHON"; QuerySuffix = "python.spamrats.com" },
+        @{ Name = "SPAMRATS TL"; QuerySuffix = "tl.spamrats.com" },
+        @{ Name = "SPAMRATS SI"; QuerySuffix = "si.spamrats.com" },
+        @{ Name = "SPAMRATS SE"; QuerySuffix = "se.spamrats.com" },
+        @{ Name = "SPAMRATS NO"; QuerySuffix = "no.spamrats.com" },
+        @{ Name = "SPAMRATS FR"; QuerySuffix = "fr.spamrats.com" },
+        @{ Name = "SPAMRATS NL"; QuerySuffix = "nl.spamrats.com" },
+        @{ Name = "SPAMRATS DE"; QuerySuffix = "de.spamrats.com" },
+        @{ Name = "SPAMRATS IT"; QuerySuffix = "it.spamrats.com" },
+        @{ Name = "SPAMRATS UK"; QuerySuffix = "uk.spamrats.com" },
+        @{ Name = "SPAMRATS US"; QuerySuffix = "us.spamrats.com" },
+        @{ Name = "SPAMRATS CA"; QuerySuffix = "ca.spamrats.com" },
+        @{ Name = "SPAMRATS AU"; QuerySuffix = "au.spamrats.com" },
+        @{ Name = "SPAMRATS NZ"; QuerySuffix = "nz.spamrats.com" },
+        @{ Name = "SPAMRATS JP"; QuerySuffix = "jp.spamrats.com" },
+        @{ Name = "SPAMRATS CN"; QuerySuffix = "cn.spamrats.com" },
+        @{ Name = "SPAMRATS RU"; QuerySuffix = "ru.spamrats.com" },
+        @{ Name = "SPAMRATS BR"; QuerySuffix = "br.spamrats.com" },
+        @{ Name = "SPAMRATS AR"; QuerySuffix = "ar.spamrats.com" },
+        @{ Name = "SPAMRATS ZA"; QuerySuffix = "za.spamrats.com" },
+        @{ Name = "SPAMRATS IN"; QuerySuffix = "in.spamrats.com" },
+        @{ Name = "SPAMRATS MX"; QuerySuffix = "mx.spamrats.com" },
+        @{ Name = "SPAMRATS KR"; QuerySuffix = "kr.spamrats.com" },
+        @{ Name = "SPAMRATS TW"; QuerySuffix = "tw.spamrats.com" },
+        @{ Name = "SPAMRATS HK"; QuerySuffix = "hk.spamrats.com" },
+        @{ Name = "SPAMRATS SG"; QuerySuffix = "sg.spamrats.com" },
+        @{ Name = "SPAMRATS ID"; QuerySuffix = "id.spamrats.com" },
+        @{ Name = "SPAMRATS PH"; QuerySuffix = "ph.spamrats.com" },
+        @{ Name = "SPAMRATS TH"; QuerySuffix = "th.spamrats.com" },
+        @{ Name = "SPAMRATS VN"; QuerySuffix = "vn.spamrats.com" },
+        @{ Name = "SPAMRATS MY"; QuerySuffix = "my.spamrats.com" },
+        @{ Name = "SPAMRATS PK"; QuerySuffix = "pk.spamrats.com" },
+        @{ Name = "SPAMRATS TR"; QuerySuffix = "tr.spamrats.com" },
+        @{ Name = "SPAMRATS IL"; QuerySuffix = "il.spamrats.com" },
+        @{ Name = "SPAMRATS SA"; QuerySuffix = "sa.spamrats.com" },
+        @{ Name = "SPAMRATS AE"; QuerySuffix = "ae.spamrats.com" },
+        @{ Name = "SPAMRATS EG"; QuerySuffix = "eg.spamrats.com" },
+        @{ Name = "SPAMRATS NG"; QuerySuffix = "ng.spamrats.com" },
+        @{ Name = "SPAMRATS KE"; QuerySuffix = "ke.spamrats.com" },
+        @{ Name = "SPAMRATS GH"; QuerySuffix = "gh.spamrats.com" },
+        @{ Name = "SPAMRATS ZW"; QuerySuffix = "zw.spamrats.com" }
     )
+    
     $ipInvertito = ($ipToCheck -split '\.')[-1..0] -join '.'
     $manualListed = 0
     $manualCount = $fallbackLists.Count
+    
+    Log "[i] Verifica in corso su $manualCount server DNSBL..." $global:infoColor
+    Flush-LogBuffer; Pump-UI
+    
     foreach ($list in $fallbackLists) {
         try {
             $null = Resolve-DnsName -Name "$ipInvertito.$($list.QuerySuffix)" -Type A -ErrorAction Stop -DnsOnly -QuickTimeout
-            Log-Color -TextBefore " [??] $($list.Name) : " -TextToColor "SEGNALATO" -Color ([System.Drawing.Color]::Red)
+            Log-Color -TextBefore " [??] $($list.Name) : " -TextToColor "SEGNALATO" -Color ([System.Drawing.Color]::Red) -FontStyle "Bold"
             $manualListed++
+            $segnalazioniList += $list.Name
         } catch {
-            Log-Color -TextBefore " [?] $($list.Name) : " -TextToColor "PULITO" -Color ([System.Drawing.Color]::Green)
+            Log-Color -TextBefore " [?] $($list.Name) : " -TextToColor "PULITO" -Color ([System.Drawing.Color]::Green) -FontStyle "Bold"
         }
         Pump-UI
     }
+    
+    # ---- CONTROLLO WEB MULTIRBL (opzionale) ----
     Log ""; Log " [??] CONTROLLO WEB SU MULTIRBL.VALLI.ORG"
     Log " -------------------------------------------------------------"
     Log "[>] Download e analisi pagina web in corso (15-30 sec)..."
     Flush-LogBuffer; Pump-UI
-    $webListed = 0; $webCount = 0
+    
+    $webListed = 0
+    $webCount = 0
     try {
         $uri = "https://multirbl.valli.org/lookup/$ipToCheck.html"
         $headers = @{
@@ -951,10 +1140,11 @@ function Do-BlacklistCheck {
                     $status = $match.Groups["Status"].Value.Trim().ToUpper()
                     $webCount++
                     if ($status -eq "LISTED") {
-                        Log-Color -TextBefore " [??] $listName : " -TextToColor "SEGNALATO" -TextAfter " (da MultiRBL)" -Color ([System.Drawing.Color]::Red)
+                        Log-Color -TextBefore " [??] $listName : " -TextToColor "SEGNALATO" -TextAfter " (da MultiRBL)" -Color ([System.Drawing.Color]::Red) -FontStyle "Bold"
                         $webListed++
+                        $segnalazioniList += $listName
                     } else {
-                        Log-Color -TextBefore " [?] $listName : " -TextToColor "PULITO" -Color ([System.Drawing.Color]::Green)
+                        Log-Color -TextBefore " [?] $listName : " -TextToColor "PULITO" -Color ([System.Drawing.Color]::Green) -FontStyle "Bold"
                     }
                     Pump-UI
                 }
@@ -963,17 +1153,19 @@ function Do-BlacklistCheck {
             } else {
                 Log "[!] Struttura standard non trovata. Tentativo con parser generico di emergenza..."
                 $rows = $htmlContent -split '<tr'
-                $fallbackListed = 0; $fallbackTotal = 0
+                $fallbackListed = 0
+                $fallbackTotal = 0
                 foreach ($row in $rows) {
                     if ($row -match '<a[^>]*>([^<]+)</a>') {
                         $linkText = $Matches[1].Trim()
                         if ($linkText.Length -gt 4 -and $linkText -notmatch '^(Home|About|Contact|Login|MultiRBL|Valli\.org|Donate)$') {
                             $fallbackTotal++
                             if ($row -match '\bLISTED\b') {
-                                Log-Color -TextBefore " [??] $linkText : " -TextToColor "SEGNALATO" -TextAfter " (da MultiRBL)" -Color ([System.Drawing.Color]::Red)
+                                Log-Color -TextBefore " [??] $linkText : " -TextToColor "SEGNALATO" -TextAfter " (da MultiRBL)" -Color ([System.Drawing.Color]::Red) -FontStyle "Bold"
                                 $fallbackListed++
+                                $segnalazioniList += $linkText
                             } else {
-                                Log-Color -TextBefore " [?] $linkText : " -TextToColor "PULITO" -Color ([System.Drawing.Color]::Green)
+                                Log-Color -TextBefore " [?] $linkText : " -TextToColor "PULITO" -Color ([System.Drawing.Color]::Green) -FontStyle "Bold"
                             }
                             Pump-UI
                         }
@@ -990,28 +1182,42 @@ function Do-BlacklistCheck {
             }
         }
     } catch {
-        Log "[!] Errore durante la richiesta a MultiRBL: $($_.Exception.Message)"
+        Log "[!] Errore durante la richiesta a MultiRBL: $($_.Exception.Message)" $global:warningColor
     }
+    
+    # ---- RIEPILOGO ----
     $totalLists = $moduleListCount + $manualCount + $webCount
     $totalListed = $moduleListed + $manualListed + $webListed
+    
     Log ""; Log " [??] RIEPILOGO COMPLETO"
     Log " -------------------------------------------------------------"
     Log " Controlli PSBlackListChecker : $moduleListCount liste"
     Log " Controlli manuali estesi     : $manualCount liste"
     Log " Controlli Web (MultiRBL)     : $webCount liste"
     Log " TOTALE LISTE CONTROLLATE     : $totalLists"
-    Log " TOTALE SEGNALAZIONI          : $totalListed"
-    Log " -------------------------------------------------------------"
     if ($totalListed -gt 0) {
-        Update-Status "[??] $totalListed SEGNALAZIONI su $totalLists liste" $exitColor
+        Log-Color -TextBefore " TOTALE SEGNALAZIONI          : " -TextToColor "$totalListed" -Color ([System.Drawing.Color]::Red) -FontStyle "Bold"
+        # Stampa la lista dettagliata delle segnalazioni
+        Log " LISTA SEGNALAZIONI:"
+        foreach ($item in ($segnalazioniList | Sort-Object -Unique)) {
+            Log "   - $item"
+        }
     } else {
-        Update-Status "[?] PULITO (0 segnalazioni su $totalLists liste)" $successColor
+        Log-Color -TextBefore " TOTALE SEGNALAZIONI          : " -TextToColor "$totalListed" -Color ([System.Drawing.Color]::Green) -FontStyle "Bold"
+    }
+    Log " -------------------------------------------------------------"
+    
+    if ($totalListed -gt 0) {
+        Update-Status "[??] $totalListed SEGNALAZIONI su $totalLists liste" $global:exitColor
+    } else {
+        Update-Status "[?] PULITO (0 segnalazioni su $totalLists liste)" $global:successColor
     }
     Log "==============================================================================================="; Log ""
     Update-Progress 100
     Flush-LogBuffer; Pump-UI
 }
 
+# ---------- ESPORTAZIONE ----------
 Export-ModuleMember -Function @(
     'Do-FlushDNS',
     'Do-RenewIP',
