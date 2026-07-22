@@ -89,18 +89,16 @@ $logFile = Join-Path $tempDir "Manutenzione_PRO_MAX_$(Get-Date -Format 'yyyyMMdd
 $isPwsh7 = ($PSVersionTable.PSVersion.Major -ge 7)
 
 # ---- VARIABILI GLOBALI ----
-$global:currentVersion = "3.1.0"   # aggiorna con la tua versione
+$global:currentVersion = "3.1.0"
 $global:repoOwner = "pierpaolosanna"
 $global:repoName = "ManutenzioneProMax"
 $global:scriptFileName = "Manutenzione_PRO_MAX.ps1"
 $global:versionFileName = "version.txt"
 $global:githubRawUrl = "https://raw.githubusercontent.com/$($global:repoOwner)/$($global:repoName)/main/"
 
-# Aggiungi anche queste per la funzione Restart-AsAdmin e per i moduli
-$global:isAdmin = $isAdmin          # già calcolato prima
+$global:isAdmin = $isAdmin
 $global:isPwsh7 = ($PSVersionTable.PSVersion.Major -ge 7)
 $global:isClosing = $false
-# $global:form verrà assegnato in Build-GUI (dopo la creazione)
 
 function Restart-AsAdmin {
     if ($global:isAdmin) { 
@@ -287,20 +285,23 @@ function Build-GUI {
         }
     }
 
-    # ---- HEADER (invariato) ----
+    # ---- HEADER con 3 colonne ----
     $headerPanel = New-Object System.Windows.Forms.Panel
     $headerPanel.Dock = "Top"
     $headerPanel.BackColor = $global:bgPanel
     $headerPanel.Padding = New-Object System.Windows.Forms.Padding(0, 0, 0, 0)
     $headerTable = New-Object System.Windows.Forms.TableLayoutPanel
     $headerTable.Dock = "Fill"
-    $headerTable.ColumnCount = 2
+    $headerTable.ColumnCount = 3                     # <--- 3 colonne
     $headerTable.RowCount = 1
-    $headerTable.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))
-    $headerTable.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+    $headerTable.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))     # Colonna 0: titolo
+    $headerTable.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100))) # Colonna 1: categorie
+    $headerTable.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))     # Colonna 2: pulsante pulisci log
     $headerTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
     $headerTable.BackColor = $global:bgPanel
     $headerPanel.Controls.Add($headerTable)
+
+    # ---- TITOLO + ADMIN BADGE + VERSIONE ----
     $titleContainer = New-Object System.Windows.Forms.FlowLayoutPanel
     $titleContainer.Dock = "Fill"
     $titleContainer.FlowDirection = "LeftToRight"
@@ -336,7 +337,7 @@ function Build-GUI {
     $titleContainer.Controls.Add($verLabel)
     $headerTable.Controls.Add($titleContainer, 0, 0)
 
-    # ---- CATEGORIE (invariato) ----
+    # ---- CATEGORIE ----
     $categoryGrid = New-Object System.Windows.Forms.TableLayoutPanel
     $categoryGrid.Dock = "Fill"
     $categoryGrid.RowCount = 2
@@ -349,6 +350,7 @@ function Build-GUI {
     $categoryGrid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
     $categoryGrid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
     $headerTable.Controls.Add($categoryGrid, 1, 0)
+
     $script:selectedCategory = $null
     $categoryButtons = @{}
     $catList = $categories.Keys | Sort-Object
@@ -409,6 +411,28 @@ function Build-GUI {
         $categoryButtons[$defaultCat].ForeColor = [System.Drawing.Color]::White
         $categoryButtons[$defaultCat].FlatAppearance.BorderColor = $catColor
     }
+
+    # ---- PULSANTE PULISCI LOG ----
+    $clearLogButton = New-Object System.Windows.Forms.Button
+    $clearLogButton.Text = "🧹 Pulisci Log"
+    $clearLogButton.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $clearLogButton.BackColor = [System.Drawing.Color]::FromArgb(0, 160, 0)   # Verde come Eleva Admin
+    $clearLogButton.ForeColor = [System.Drawing.Color]::White
+    $clearLogButton.FlatStyle = "Flat"
+    $clearLogButton.FlatAppearance.BorderColor = [System.Drawing.Color]::Lime
+    $clearLogButton.FlatAppearance.BorderSize = 2
+    $clearLogButton.AutoSize = $false
+    $clearLogButton.Size = New-Object System.Drawing.Size(110, 30)
+    $clearLogButton.Margin = New-Object System.Windows.Forms.Padding(4, 2, 4, 2)
+    $clearLogButton.Cursor = [System.Windows.Forms.Cursors]::Hand
+    $clearLogButton.Dock = [System.Windows.Forms.DockStyle]::Fill   # Riempe l’altezza della colonna
+
+    $clearLogButton.Add_Click({
+        Clear-Log
+    })
+
+    $headerTable.Controls.Add($clearLogButton, 2, 0)
+
     $headerPanel.Height = 40 + 2 * 22
     $script:form.Controls.Add($headerPanel)
 
@@ -477,21 +501,24 @@ function Build-GUI {
     $statusPanel.BackColor = $global:bgPanel
     $statusPanel.Padding = New-Object System.Windows.Forms.Padding(5, 2, 5, 2)
     $statusPanel.BorderStyle = "FixedSingle"
+
     $script:statusLabel = New-Object System.Windows.Forms.Label
     $script:statusLabel.Text = "🛡️ Pronto"
-    $script:statusLabel.Font = New-Object System.Drawing.Font("Segoe UI Semibold", 8)
-    $script:statusLabel.ForeColor = $global:fgDim
+    $script:statusLabel.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $script:statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(80, 200, 120)
     $script:statusLabel.Location = New-Object System.Drawing.Point(8, 1)
     $script:statusLabel.Size = New-Object System.Drawing.Size(250, 16)
     $statusPanel.Controls.Add($script:statusLabel)
+
     $script:progressLabel = New-Object System.Windows.Forms.Label
     $script:progressLabel.Text = "0%"
-    $script:progressLabel.Font = New-Object System.Drawing.Font("Segoe UI", 7, [System.Drawing.FontStyle]::Bold)
+    $script:progressLabel.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
     $script:progressLabel.ForeColor = $global:accentColor
     $script:progressLabel.Location = New-Object System.Drawing.Point(270, 1)
     $script:progressLabel.Size = New-Object System.Drawing.Size(40, 16)
     $script:progressLabel.TextAlign = "MiddleLeft"
     $statusPanel.Controls.Add($script:progressLabel)
+
     $script:progressBar = New-Object System.Windows.Forms.ProgressBar
     $script:progressBar.Location = New-Object System.Drawing.Point(8, 22)
     $script:progressBar.Size = New-Object System.Drawing.Size(1020, 20)
@@ -503,17 +530,17 @@ function Build-GUI {
     $script:progressBar.ForeColor = $global:accentColor
     $script:progressBar.BackColor = [System.Drawing.Color]::FromArgb(40, 40, 48)
     $statusPanel.Controls.Add($script:progressBar)
+
     $statusPanel.Add_Resize({ $script:progressBar.Width = $statusPanel.Width - 16 })
     $mainPanel.Controls.Add($statusPanel)
 
     # ---- INIZIALIZZA CORE UI ----
     Set-CoreUI -LogBox $script:logBox -ProgressBar $script:progressBar -ProgressLabel $script:progressLabel -StatusLabel $script:statusLabel -Form $script:form -LogFile $logFile
-	# Rendi disponibili le variabili UI a tutti i moduli
-		$global:logBox = $script:logBox
-		$global:progressBar = $script:progressBar
-		$global:progressLabel = $script:progressLabel
-		$global:statusLabel = $script:statusLabel
-		$global:form = $script:form
+    $global:logBox = $script:logBox
+    $global:progressBar = $script:progressBar
+    $global:progressLabel = $script:progressLabel
+    $global:statusLabel = $script:statusLabel
+    $global:form = $script:form
 
     # ---- FUNZIONE UPDATE-BUTTONS ----
     function Update-Buttons {
@@ -568,13 +595,11 @@ function Build-GUI {
 
     # ---- EVENTI FORM ----
     $script:form.Add_Shown({
-        # ---- SCRIVE LE PRIME RIGHE DI LOG ----
-		Log-Color -TextBefore "  " -TextToColor "PRO MAX Maintenance v$($global:currentVersion) By Peters" -Color ([System.Drawing.Color]::Cyan) -FontStyle "Bold"
-        		Log-Color -TextBefore " " -TextToColor "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | $psVer" -Color ([System.Drawing.Color]::Yellow) -FontStyle "Regular"
+        Log-Color -TextBefore "  " -TextToColor "PRO MAX Maintenance v$($global:currentVersion) By Peters" -Color ([System.Drawing.Color]::Cyan) -FontStyle "Bold"
+        Log-Color -TextBefore " " -TextToColor "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | $psVer" -Color ([System.Drawing.Color]::Yellow) -FontStyle "Regular"
         Log " Log: $logFile"
         Log ""; Flush-LogBuffer
 
-        # ---- MESSAGGIO DI BENVENUTO COLORATO ----
         $script:logBox.SuspendLayout()
         $script:logBox.SelectionStart = $script:logBox.TextLength
         $script:logBox.SelectionLength = 0
@@ -589,12 +614,10 @@ function Build-GUI {
         $script:logBox.SelectionColor = $script:logBox.ForeColor
         $script:logBox.ResumeLayout()
 
-        # ---- FORZA LO SCROLL ALL'INIZIO ----
         $script:logBox.SelectionStart = 0
         $script:logBox.ScrollToCaret()
         [System.Windows.Forms.Application]::DoEvents()
 
-        # ---- CONTROLLO AGGIORNAMENTI (in background) ----
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         try {
             $remoteVersionUrl = $global:githubRawUrl + $global:versionFileName
@@ -611,7 +634,6 @@ function Build-GUI {
         }
         Flush-LogBuffer; Pump-UI
 
-        # ---- RIPORTA LO SCROLL ALL'INIZIO (dopo eventuali messaggi) ----
         $script:logBox.SelectionStart = 0
         $script:logBox.ScrollToCaret()
     })
