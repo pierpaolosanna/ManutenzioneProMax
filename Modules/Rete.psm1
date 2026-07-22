@@ -41,7 +41,7 @@ function Ensure-BlacklistModules {
     Log "==============================================================================================="
     Flush-LogBuffer; Pump-UI
     
-    $installScript = Join-Path $global:scriptRoot "install-github-modules.ps1"
+    $installScript = Join-Path $global:scriptRoot "Modules\install-github-modules.ps1"
     if (-not (Test-Path $installScript)) {
         Log "[X] install-github-modules.ps1 non trovato in $global:scriptRoot" $global:exitColor
         Log "[i] Scarica manualmente lo script da GitHub o esegui 'Full Update'." $global:infoColor
@@ -331,76 +331,221 @@ function Do-SpeedInternet {
     Flush-LogBuffer; Pump-UI
 }
 
+
+
+
 function Do-SpeedOokla {
     if ($script:isClosing -or (Test-Cancel)) { return }
-    Update-Status "[...] Speedtest Ookla..." $global:networkColor
+    Update-Status "[...] Speedtest e Affidabilità..." $global:networkColor
     Flush-LogBuffer; Pump-UI
-    Log ""; Log "==============================================================================================="; Log "[>] SPEEDTEST OOKLA (dettagliato)"; Log "==============================================================================================="
+    Log ""; Log "==============================================================================================="; Log "[>] SPEEDTEST VELOCITÀ E AFFIDABILITÀ"; Log "==============================================================================================="
+    
+    # Ottieni IP pubblico
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         $publicIP = Invoke-RestMethod -Uri "https://api.ipify.org" -TimeoutSec 5 -ErrorAction Stop
-        Log " [??] IP Pubblico : $publicIP"
+        Log " [i] IP Pubblico : $publicIP"
     } catch {
-        Log " [??] IP Pubblico : non rilevato (verifica connessione)"
+        Log " [i] IP Pubblico : non rilevato (verifica connessione)"
     }
     Log ""
+
+    # ---- TEST AFFIDABILITÀ NATIVO (Ping, Jitter, Packet Loss) ----
+    Log "[>] Test Affidabilità (Ping multi-provider nativo)..."
+    Flush-LogBuffer; Pump-UI
+    $pingTargets = @(
+        @{Name="Google DNS"; IP="8.8.8.8"},
+        @{Name="Cloudflare DNS"; IP="1.1.1.1"}
+    )
+
+    foreach ($target in $pingTargets) {
+        try {
+            # Esegue 10 ping nativi
+            $pings = Test-Connection -ComputerName $target.IP -Count 10 -ErrorAction Stop
+            $received = ($pings | Measure-Object).Count
+            $loss = [Math]::Round(((10 - $received) / 10) * 100, 1)
+            $avgLat = [Math]::Round(($pings | Measure-Object -Property ResponseTime -Average).Average, 1)
+            
+            # Calcolo Jitter (Deviazione Standard delle latenze)
+            $jitter = 0
+            if ($received -gt 1) {
+                $latencies = $pings | Select-Object -ExpandProperty ResponseTime
+                $avg = $latencies | Measure-Object -Average | Select-Object -ExpandProperty Average
+                $variance = ($latencies | ForEach-Object { [math]::Pow($_ - $avg, 2) } | Measure-Object -Average).Average
+                $jitter = [Math]::Round([math]::Sqrt($variance), 1)
+            }
+            
+            Log " [OK] $($target.Name) ($($target.IP)) -> Lat: ${avgLat}ms | Jitter: ${jitter}ms | Loss: ${loss}%"
+        } catch {
+            Log "[!] Impossibile contattare $($target.Name) ($($target.IP))"
+        }
+    }
+    Log ""
+    
+    # ---- TENTATIVO 1: OOKLA ----
     $speedtestExe = Join-Path $global:scriptRoot "lib" "speedtest.exe"
-    if (-not (Test-Path $speedtestExe)) {
-        Log "[!] speedtest.exe non trovato in $global:scriptRoot\lib"
-        Log "[i] Esegui 'Full Update' per scaricare i file necessari."
-        Update-Status "[X] speedtest.exe mancante" $global:exitColor
+    if (Test-Path $speedtestExe) {
+        Log "[>] Tentativo 1: Speedtest Ookla..."
         Flush-LogBuffer; Pump-UI
-        Update-Progress 100
-        return
+        
+        $args = "--accept-license --accept-gdpr --format=json --progress=no"
+        $tempFile = "$env:TEMP\speedtest_output.json"
+        $errorFile = "$env:TEMP\speedtest_error.log"
+        
+        try {
+            $process = Start-Process -FilePath $speedtestExe -ArgumentList $args -Wait -NoNewWindow -PassThru -RedirectStandardOutput $tempFile -RedirectStandardError $errorFile
+            
+            if (Test-Path $errorFile) {
+                $errorOutput = Get-Content $errorFile -Raw
+                if ($errorOutput -and $errorOutput.Trim()) {
+                    Log "[i] Debug speedtest.exe:"
+                    Log-Output ($errorOutput -split "`n")
+                }
+                Remove-Item $errorFile -Force -ErrorAction SilentlyContinue
+            }
+            
+            if ($process.ExitCode -eq 0 -and (Test-Path $tempFile) -and (Get-Item $tempFile).Length -gt 0) {
+                $json = Get-Content $tempFile -Raw | ConvertFrom-Json
+                if ($json) {
+                    $downloadMbps = [Math]::Round($json.download.bandwidth * 8 / 1e6, 2)
+                    $uploadMbps = [Math]::Round($json.upload.bandwidth * 8 / 1e6, 2)
+                    $latencyMs = $json.ping.latency
+                    $jitterMs = $json.ping.jitter
+                    $packetLoss = [Math]::Round($json.packetLoss * 100, 2)
+                    $serverName = $json.server.name
+                    $serverLoc = "$($json.server.location), $($json.server.country)"
+                    $isp = $json.isp
+                    
+                    Log ""; Log "[OK] RISULTATI OOKLA"
+                    Log "---------------------------------------------"
+                    Log " Server      : $serverName ($serverLoc)"
+                    Log " Provider    : $isp"
+                    Log " Download    : $downloadMbps Mbps"
+                    Log " Upload      : $uploadMbps Mbps"
+                    Log " Latenza     : $latencyMs ms"
+                    Log " Jitter      : $jitterMs ms"
+                    Log " Packet Loss : $packetLoss%"
+                    Log "---------------------------------------------"; Log ""
+                    Update-Status "[OK] DL $downloadMbps / UP $uploadMbps Mbps" $global:successColor
+                    Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+                    Log "==============================================================================================="; Log ""
+                    Update-Progress 100
+                    Flush-LogBuffer; Pump-UI
+                    return
+                }
+            }
+            Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+        } catch {
+            Log "[!] Errore durante Ookla: $($_.Exception.Message)"
+        }
+        Log "[i] Ookla non disponibile (firewall o connettività). Passo al fallback..."
+    } else {
+        Log "[i] speedtest.exe non trovato. Passo al fallback..."
     }
+    
+    # ---- TENTATIVO 2: CLOUDFLARE (HTTPS porta 443) ----
+    Log "[>] Tentativo 2: Speedtest Cloudflare..."
+    Flush-LogBuffer; Pump-UI
+    
     try {
-        Log "[>] Avvio test (potrebbe richiedere 20-30 secondi)..."
-        Flush-LogBuffer; Pump-UI
-        $process = Start-Process -FilePath $speedtestExe -ArgumentList "--accept-license --accept-gdpr --format=json" -Wait -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\speedtest_output.json"
-        if ($process.ExitCode -ne 0) {
-            Log "[X] Errore nell'esecuzione di speedtest (codice: $($process.ExitCode))"
-            Update-Status "[X] Errore speedtest" $global:exitColor
-            Flush-LogBuffer; Pump-UI
-            Update-Progress 100
-            return
+        # Ping (latenza)
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        Invoke-WebRequest -Uri "https://speed.cloudflare.com/__down?bytes=0" -Method Get -TimeoutSec 5 -UseBasicParsing | Out-Null
+        $sw.Stop()
+        $latency = [Math]::Round($sw.Elapsed.TotalMilliseconds, 1)
+        Log " Ping: ${latency}ms"
+        
+        # Download (25 MB per un test più accurato su linee veloci)
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $data = Invoke-WebRequest -Uri "https://speed.cloudflare.com/__down?bytes=25000000" -Method Get -TimeoutSec 30 -UseBasicParsing
+        $sw.Stop()
+        $bytes = $data.RawContentLength
+        $dl = 0
+        if ($bytes -and $sw.Elapsed.TotalSeconds -gt 0) {
+            $dl = [Math]::Round((($bytes * 8) / 1MB) / $sw.Elapsed.TotalSeconds, 2)
         }
-        $json = Get-Content "$env:TEMP\speedtest_output.json" -Raw | ConvertFrom-Json
-        if (-not $json) {
-            Log "[X] Impossibile leggere i risultati."
-            Update-Status "[X] Errore parsing" $global:exitColor
-            Update-Progress 100
-            return
+        Log " DL: ${dl} Mbps"
+        
+        # Upload (Aumentato a 10MB per calcolare meglio le linee above 100Mbps)
+        $buf = New-Object byte[](10MB)
+        (New-Object Random).NextBytes($buf)
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        Invoke-WebRequest -Uri "https://speed.cloudflare.com/__up" -Method Post -Body $buf -TimeoutSec 30 -UseBasicParsing | Out-Null
+        $sw.Stop()
+        $ul = 0
+        if ($sw.Elapsed.TotalSeconds -gt 0) {
+            $ul = [Math]::Round((10 * 8) / $sw.Elapsed.TotalSeconds, 2)
         }
-        $downloadBps = $json.download.bandwidth
-        $uploadBps = $json.upload.bandwidth
-        $latencyMs = $json.ping.latency
-        $jitterMs = $json.ping.jitter
-        $packetLoss = $json.packetLoss * 100
-        $serverName = $json.server.name
-        $serverLoc = "$($json.server.location), $($json.server.country)"
-        $isp = $json.isp
-        $downloadMbps = [Math]::Round($downloadBps * 8 / 1e6, 2)
-        $uploadMbps = [Math]::Round($uploadBps * 8 / 1e6, 2)
-        Log ""; Log "[OK] RISULTATI SPEEDTEST OOKLA"
+        Log " UP: ${ul} Mbps"
+        
+        Log ""; Log "[OK] RISULTATI CLOUDFLARE"
         Log "---------------------------------------------"
-        Log " Server      : $serverName ($serverLoc)"
-        Log " Provider    : $isp"
-        Log " Download    : $downloadMbps Mbps"
-        Log " Upload      : $uploadMbps Mbps"
-        Log " Latenza     : $latencyMs ms"
-        Log " Jitter      : $jitterMs ms"
-        Log " Packet Loss : $([Math]::Round($packetLoss, 2))%"
+        Log " Download    : $dl Mbps"
+        Log " Upload      : $ul Mbps"
+        Log " Latenza     : $latency ms"
         Log "---------------------------------------------"; Log ""
-        Update-Status "[OK] DL $downloadMbps / UP $uploadMbps Mbps" $global:successColor
+        Update-Status "[OK] DL $dl / UP $ul Mbps" $global:successColor
+        Log "==============================================================================================="; Log ""
+        Update-Progress 100
+        Flush-LogBuffer; Pump-UI
+        return
     } catch {
-        Log "[X] Errore durante il test: $($_.Exception.Message)"
-        Update-Status "[X] Errore" $global:exitColor
+        Log "[!] Errore durante Cloudflare: $($_.Exception.Message)"
     }
-    try { Remove-Item "$env:TEMP\speedtest_output.json" -Force -ErrorAction SilentlyContinue } catch { }
+    
+    # ---- TENTATIVO 3: NATIVO PowerShell (Multi-Provider) ----
+    # Sostituiti i file da 100MB con file da ~10-25MB per evitare timeout su connessioni lente
+    Log "[>] Tentativo 3: Speedtest Native (download multi-provider)..."
+    Flush-LogBuffer; Pump-UI
+    
+    $testUrls = @(
+        @{Url="https://speed.cloudflare.com/__down?bytes=10000000"; Provider="Cloudflare"},
+        @{Url="https://proof.ovh.net/files/100Mb.dat"; Provider="OVH"}, # ~12.5 MB
+        @{Url="https://speedtest.tele2.net/10MB.zip"; Provider="Tele2"}
+    )
+    
+    $success = $false
+    foreach ($item in $testUrls) {
+        if ($script:isClosing -or (Test-Cancel)) { break }
+        try {
+            Log "[i] Tentativo download da: $($item.Provider) ($($item.Url))"
+            $sw = [System.Diagnostics.Stopwatch]::StartNew()
+            # Timeout impostato a 20 secondi max per non bloccare la UI
+            $data = Invoke-WebRequest -Uri $item.Url -Method Get -TimeoutSec 20 -UseBasicParsing -ErrorAction Stop
+            $sw.Stop()
+            $bytes = $data.RawContentLength
+            if ($bytes -gt 0 -and $sw.Elapsed.TotalSeconds -gt 0) {
+                $speedMbps = [Math]::Round((($bytes * 8) / 1MB) / $sw.Elapsed.TotalSeconds, 2)
+                Log " Velocità download: $speedMbps Mbps"
+                Log " Tempo: $([Math]::Round($sw.Elapsed.TotalSeconds, 2)) secondi"
+                Log " Dimensione: $([Math]::Round($bytes/1MB, 2)) MB"
+                $success = $true
+                Update-Status "[OK] DL $speedMbps Mbps ($($item.Provider))" $global:successColor
+                break
+            }
+        } catch {
+            if ($_.Exception.Message -match "Timed out" -or $_.Exception.Message -match "timeout") {
+                Log "[!] Timeout raggiunto con $($item.Provider) (connessione troppo lenta per questo file)"
+            } else {
+                Log "[!] Fallito $($item.Provider): $($_.Exception.Message)"
+            }
+            continue
+        }
+    }
+    
+    if (-not $success) {
+        Log "[X] Tutti i tentativi di speedtest sono falliti."
+        Log "[i] Verifica la connessione Internet, firewall o riprova."
+        Update-Status "[X] Speedtest fallito" $global:exitColor
+    }
+    
     Log "==============================================================================================="; Log ""
     Update-Progress 100
     Flush-LogBuffer; Pump-UI
 }
+
+
+
 
 function Do-Traceroute {
     if ($script:isClosing -or (Test-Cancel)) { return }
