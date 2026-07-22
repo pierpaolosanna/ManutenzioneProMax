@@ -134,7 +134,7 @@ function Build-GUI {
     [System.Windows.Forms.Application]::EnableVisualStyles()
     [System.Windows.Forms.Application]::SetHighDpiMode([System.Windows.Forms.HighDpiMode]::PerMonitorV2)
     $script:form = New-Object System.Windows.Forms.Form
-    $script:form.Text = "Manutenzione PRO MAX v$($global:currentVersion) Peters"
+    $script:form.Text = "PRO MAX Maintenance v$($global:currentVersion) Peters"
     $script:form.Size = New-Object System.Drawing.Size(1050, 580)
     $script:form.MinimumSize = New-Object System.Drawing.Size(1050, 580)
     $script:form.StartPosition = "CenterScreen"
@@ -454,7 +454,7 @@ function Build-GUI {
     $logBoxPanel = New-Object System.Windows.Forms.Panel
     $logBoxPanel.Dock = "Fill"
     $logBoxPanel.BackColor = $global:logBg
-    $logBoxPanel.Padding = New-Object System.Windows.Forms.Padding(2, 25, 2, 2)
+    $logBoxPanel.Padding = New-Object System.Windows.Forms.Padding(2, 85, 2, 2)
     $logBoxPanel.BorderStyle = "FixedSingle"
     $logPanel.Controls.Add($logBoxPanel)
     $script:logBox = New-Object System.Windows.Forms.RichTextBox
@@ -568,16 +568,19 @@ function Build-GUI {
 
     # ---- EVENTI FORM ----
     $script:form.Add_Shown({
-        Log "  Manutenzione PRO MAX v$($global:currentVersion) Peters"
-        Log " $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | $psVer"
+        # ---- SCRIVE LE PRIME RIGHE DI LOG ----
+		Log-Color -TextBefore "  " -TextToColor "PRO MAX Maintenance v$($global:currentVersion) By Peters" -Color ([System.Drawing.Color]::Cyan) -FontStyle "Bold"
+        		Log-Color -TextBefore " " -TextToColor "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | $psVer" -Color ([System.Drawing.Color]::Yellow) -FontStyle "Regular"
         Log " Log: $logFile"
         Log ""; Flush-LogBuffer
+
+        # ---- MESSAGGIO DI BENVENUTO COLORATO ----
         $script:logBox.SuspendLayout()
         $script:logBox.SelectionStart = $script:logBox.TextLength
         $script:logBox.SelectionLength = 0
         $script:logBox.SelectionColor = $global:successColor
         $script:logBox.SelectionFont = New-Object System.Drawing.Font("Consolas", 12, [System.Drawing.FontStyle]::Bold)
-        if ($isAdmin) {
+        if ($global:isAdmin) {
             $msg = " Sei già amministratore. Tutte le funzionalità sono disponibili.`nCrea sempre un punto di ripristino con Crea Ripristino prima di ogni modifica."
         } else {
             $msg = "🔧 Esegui 'Eleva Admin' per ottenere le complete potenzialità.`nCrea sempre un punto di ripristino con Crea Ripristino prima di ogni modifica."
@@ -585,15 +588,13 @@ function Build-GUI {
         $script:logBox.AppendText("`r`n$msg`r`n")
         $script:logBox.SelectionColor = $script:logBox.ForeColor
         $script:logBox.ResumeLayout()
+
+        # ---- FORZA LO SCROLL ALL'INIZIO ----
+        $script:logBox.SelectionStart = 0
         $script:logBox.ScrollToCaret()
-    })
-    $script:form.Add_FormClosing({
-        $script:isClosing = $true
-        $script:cancelRequested = $true
-        Stop-ProgressPulse
-        if ($script:uiTimer) { $script:uiTimer.Stop(); $script:uiTimer.Dispose() }
-    })
-    $script:form.Add_Shown({
+        [System.Windows.Forms.Application]::DoEvents()
+
+        # ---- CONTROLLO AGGIORNAMENTI (in background) ----
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         try {
             $remoteVersionUrl = $global:githubRawUrl + $global:versionFileName
@@ -609,11 +610,21 @@ function Build-GUI {
             Log "[!] Impossibile verificare aggiornamenti: $($_.Exception.Message)"
         }
         Flush-LogBuffer; Pump-UI
+
+        # ---- RIPORTA LO SCROLL ALL'INIZIO (dopo eventuali messaggi) ----
+        $script:logBox.SelectionStart = 0
+        $script:logBox.ScrollToCaret()
+    })
+
+    $script:form.Add_FormClosing({
+        $script:isClosing = $true
+        $script:cancelRequested = $true
+        Stop-ProgressPulse
+        if ($script:uiTimer) { $script:uiTimer.Stop(); $script:uiTimer.Dispose() }
     })
 
     [System.Windows.Forms.Application]::Run($script:form)
 }
-
 # ============================================================
 # AVVIO
 # ============================================================
