@@ -45,9 +45,9 @@ foreach ($mod in $modules) {
 Write-Host "[OK] Caricati tutti i moduli" -ForegroundColor Green
 
 # Carica AICHAT e Search (invariati)
-$aiChatPath = Join-Path $scriptRoot "AICHAT.ps1"
+$aiChatPath = Join-Path $scriptRoot "Modules\AICHAT.ps1"
 if (Test-Path $aiChatPath) { . $aiChatPath; Write-Host "[OK] Caricato AICHAT.ps1" -ForegroundColor Green }
-$searchPath = Join-Path $scriptRoot "Search.ps1"
+$searchPath = Join-Path $scriptRoot "Modules\Search.ps1"
 if (Test-Path $searchPath) { . $searchPath; Write-Host "[OK] Caricato Search.ps1" -ForegroundColor Green }
 
 # ---- VARIABILI GLOBALI ----
@@ -174,7 +174,7 @@ function Build-GUI {
                 @{Text="🔍 Whois"; Action={Do-Whois}; Tooltip="Informazioni su IP/dominio."}
                 @{Text="🚫 Blacklist Check"; Action={Do-BlacklistCheck}; Tooltip="Verifica blacklist."}
                 @{Text="📡 Scansione Rete Pro"; Action={
-                    $retePath = Join-Path $scriptRoot "rete.ps1"
+                    $retePath = Join-Path $scriptRoot "Modules\rete.ps1"
                     if (Test-Path $retePath) { Start-Process "pwsh.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$retePath`"" } else { Log "[X] rete.ps1 non trovato!" }
                 }; Tooltip="Avvia lo strumento di scansione rete avanzato."}
             )
