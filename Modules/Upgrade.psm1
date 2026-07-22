@@ -216,6 +216,7 @@ function Do-DriverUpdate {
     Flush-LogBuffer; Pump-UI
 }
 
+
 function Do-FullUpdate {
     param([switch]$Force)
     if (Test-Cancel) { return }
@@ -295,14 +296,20 @@ function Do-FullUpdate {
         Update-Progress 100
         Update-Status "[OK] Full Update completato!" $successColor
         Flush-LogBuffer; Pump-UI
+        
+        # ---- RIAVVIO CON LA NUOVA VERSIONE ----
         $response = [System.Windows.Forms.MessageBox]::Show("Aggiornamento completato!`nRiavviare lo script con la nuova versione?", "Riavvio necessario", "YesNo", "Question")
         if ($response -eq "Yes") {
             $exe = if ($global:isPwsh7) { "pwsh.exe" } else { "powershell.exe" }
-            $localScriptPath = $PSCommandPath
-            if ($localScriptPath -and (Test-Path $localScriptPath)) {
-                Start-Process $exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$localScriptPath`""
+            # Percorso corretto dello script principale
+            $mainScriptPath = Join-Path $global:scriptRoot $global:scriptFileName
+            if (Test-Path $mainScriptPath) {
+                Start-Process -FilePath $exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$mainScriptPath`"" -WindowStyle Normal
                 $global:isClosing = $true
                 $global:form.Close()
+            } else {
+                Log "[X] Script principale non trovato: $mainScriptPath"
+                Update-Status "[X] Errore riavvio" $exitColor
             }
         }
     } catch {
