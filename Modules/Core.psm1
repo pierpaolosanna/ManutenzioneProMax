@@ -299,17 +299,87 @@ function Ensure-ModulesForBlacklist {
 }
 
 function Invoke-GitHubDownloadRecursive {
-    param([string]$ApiUrl, [string]$LocalPath, [string]$BasePath = "")
-    $items = Invoke-RestMethod -Uri $ApiUrl -Method Get -UseBasicParsing -TimeoutSec 15
+    param(
+        [string]$ApiUrl,
+        [string]$LocalPath,
+        [string]$BasePath = "",
+        [int]$MaxRetries = 3,
+        [int]$RetryDelayMs = 1000
+    )
+
+    # ---- Funzione interna per chiamate API con retry ----
+    function Invoke-GitHubApi {
+        param([string]$Url, [int]$MaxAttempts = $MaxRetries)
+        $attempt = 0
+        while ($true) {
+            $attempt++
+            try {
+                $response = Invoke-RestMethod -Uri $Url -Method Get -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
+                return $response
+            } catch {
+                if ($attempt -ge $MaxAttempts) {
+                    Log "[X] API fallita dopo $MaxAttempts tentativi: $Url - $($_.Exception.Message)"
+                    throw
+                }
+                Log "[!] Tentativo $attempt/$MaxAttempts fallito per API: $Url - Attendo ${RetryDelayMs}ms..."
+                Start-Sleep -Milliseconds $RetryDelayMs
+            }
+        }
+    }
+
+    # ---- Funzione interna per download file con retry ----
+    function Invoke-GitHubFileDownload {
+        param([string]$Url, [string]$Destination, [int]$MaxAttempts = $MaxRetries)
+        $attempt = 0
+        while ($true) {
+            $attempt++
+            try {
+                Invoke-WebRequest -Uri $Url -OutFile $Destination -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
+                return $true
+            } catch {
+                if ($attempt -ge $MaxAttempts) {
+                    Log "[X] Download fallito dopo $MaxAttempts tentativi: $Destination - $($_.Exception.Message)"
+                    return $false
+                }
+                Log "[!] Tentativo $attempt/$MaxAttempts fallito per download: $Destination - Attendo ${RetryDelayMs}ms..."
+                Start-Sleep -Milliseconds $RetryDelayMs
+            }
+        }
+    }
+
+    # ---- MAIN ----
+    try {
+        $items = Invoke-GitHubApi -Url $ApiUrl
+    } catch {
+        Log "[X] Impossibile ottenere il contenuto da $ApiUrl - $($_.Exception.Message)"
+        return
+    }
+
     foreach ($item in $items) {
         if ($item.type -eq "dir") {
-            if ($item.name -in @("Prompt", "Docs")) { continue }
+            if ($item.name -in @("Prompt", "Docs")) { 
+                Log "[i] Saltata cartella: $($item.name) (esclusa)"
+                continue 
+            }
             $newLocalPath = Join-Path $LocalPath $item.name
             New-Item -ItemType Directory -Force -Path $newLocalPath | Out-Null
             Invoke-GitHubDownloadRecursive -ApiUrl $item.url -LocalPath $newLocalPath -BasePath "$BasePath/$($item.name)"
-        } elseif ($item.type -eq "file") {
+            
+            # Piccola pausa tra directory per evitare rate limiting
+            Start-Sleep -Milliseconds 300
+        } 
+        elseif ($item.type -eq "file") {
             $localFile = Join-Path $LocalPath $item.name
-            try { Log "[DL] Download: $BasePath/$($item.name)..."; Invoke-WebRequest -Uri $item.download_url -OutFile $localFile -UseBasicParsing -ErrorAction Stop; Log "[OK] Scaricato: $BasePath/$($item.name)" } catch { Log "[X] Errore download $BasePath/$($item.name): $($_.Exception.Message)" }
+            Log "[DL] Download: $BasePath/$($item.name)..."
+            $success = Invoke-GitHubFileDownload -Url $item.download_url -Destination $localFile
+            if ($success) {
+                Log "[OK] Scaricato: $BasePath/$($item.name)"
+            } else {
+                Log "[X] ERRORE download: $BasePath/$($item.name) - saltato"
+            }
+            
+            # Piccola pausa tra file per evitare rate limiting
+            Start-Sleep -Milliseconds 200
         }
     }
 }
