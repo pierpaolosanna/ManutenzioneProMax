@@ -88,29 +88,45 @@ $tempDir = [System.IO.Path]::GetTempPath()
 $logFile = Join-Path $tempDir "Manutenzione_PRO_MAX_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
 $isPwsh7 = ($PSVersionTable.PSVersion.Major -ge 7)
 
-$script:currentVersion = "3.1.0"
-$script:repoOwner = "pierpaolosanna"
-$script:repoName = "ManutenzioneProMax"
-$script:scriptFileName = "Manutenzione_PRO_MAX.ps1"
-$script:versionFileName = "version.txt"
-$script:githubRawUrl = "https://raw.githubusercontent.com/$($script:repoOwner)/$($script:repoName)/main/"
+# ---- VARIABILI GLOBALI ----
+$global:currentVersion = "3.1.0"   # aggiorna con la tua versione
+$global:repoOwner = "pierpaolosanna"
+$global:repoName = "ManutenzioneProMax"
+$global:scriptFileName = "Manutenzione_PRO_MAX.ps1"
+$global:versionFileName = "version.txt"
+$global:githubRawUrl = "https://raw.githubusercontent.com/$($global:repoOwner)/$($global:repoName)/main/"
 
-# ---------- FUNZIONE RESTART-ASADMIN ----------
+# Aggiungi anche queste per la funzione Restart-AsAdmin e per i moduli
+$global:isAdmin = $isAdmin          # già calcolato prima
+$global:isPwsh7 = ($PSVersionTable.PSVersion.Major -ge 7)
+$global:isClosing = $false
+# $global:form verrà assegnato in Build-GUI (dopo la creazione)
+
 function Restart-AsAdmin {
-    if ($isAdmin) { Log "[i] Gia amministratore!"; return }
+    if ($global:isAdmin) { 
+        Log "[i] Già amministratore!" 
+        return 
+    }
     try {
         $scriptPath = $PSCommandPath
         if (-not $scriptPath) { $scriptPath = $MyInvocation.MyCommand.Path }
         if (-not $scriptPath) { $scriptPath = $MyInvocation.ScriptName }
         if ($scriptPath -and (Test-Path $scriptPath)) {
             $exe = "$env:ProgramFiles\PowerShell\7\pwsh.exe"
-            if (-not (Test-Path $exe)) { $exe = if ($isPwsh7) { "pwsh.exe" } else { "powershell.exe" } }
+            if (-not (Test-Path $exe)) { 
+                $exe = if ($global:isPwsh7) { "pwsh.exe" } else { "powershell.exe" } 
+            }
             Start-Process $exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`"" -Verb RunAs
-            $script:isClosing = $true; $script:form.Close()
+            $global:isClosing = $true
+            $global:form.Close()
         } else {
             [System.Windows.Forms.MessageBox]::Show("Salva lo script come .ps1 e rieseguilo.", "Info", "OK", "Information") | Out-Null
         }
-    } catch { if ($_.Exception.Message -notmatch "canceled|annullat|cancelled") { Log "[X] $($_.Exception.Message)" } }
+    } catch { 
+        if ($_.Exception.Message -notmatch "canceled|annullat|cancelled") { 
+            Log "[X] $($_.Exception.Message)" 
+        } 
+    }
 }
 
 # ---------- BUILD-GUI ----------
@@ -118,7 +134,7 @@ function Build-GUI {
     [System.Windows.Forms.Application]::EnableVisualStyles()
     [System.Windows.Forms.Application]::SetHighDpiMode([System.Windows.Forms.HighDpiMode]::PerMonitorV2)
     $script:form = New-Object System.Windows.Forms.Form
-    $script:form.Text = "Manutenzione PRO MAX v$($script:currentVersion) Peters"
+    $script:form.Text = "Manutenzione PRO MAX v$($global:currentVersion) Peters"
     $script:form.Size = New-Object System.Drawing.Size(1050, 580)
     $script:form.MinimumSize = New-Object System.Drawing.Size(1050, 580)
     $script:form.StartPosition = "CenterScreen"
@@ -311,7 +327,7 @@ function Build-GUI {
     $titleContainer.Controls.Add($adminBadge)
     $psVer = "PS$($PSVersionTable.PSVersion.Major).$($PSVersionTable.PSVersion.Minor)"
     $verLabel = New-Object System.Windows.Forms.Label
-    $verLabel.Text = "v$($script:currentVersion) | $psVer"
+    $verLabel.Text = "v$($global:currentVersion) | $psVer"
     $verLabel.Font = New-Object System.Drawing.Font("Segoe UI", 7)
     $verLabel.ForeColor = $global:fgDim
     $verLabel.AutoSize = $true
@@ -552,7 +568,7 @@ function Build-GUI {
 
     # ---- EVENTI FORM ----
     $script:form.Add_Shown({
-        Log ""; Log ""; Log "  Manutenzione PRO MAX v$($script:currentVersion) Peters"
+        Log "  Manutenzione PRO MAX v$($global:currentVersion) Peters"
         Log " $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | $psVer"
         Log " Log: $logFile"
         Log ""; Flush-LogBuffer
@@ -580,14 +596,14 @@ function Build-GUI {
     $script:form.Add_Shown({
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         try {
-            $remoteVersionUrl = $script:githubRawUrl + $script:versionFileName
+            $remoteVersionUrl = $global:githubRawUrl + $global:versionFileName
             $remoteVersion = (Invoke-WebRequest -Uri $remoteVersionUrl -UseBasicParsing -TimeoutSec 20).Content.Trim()
-            if ($remoteVersion -ne $script:currentVersion) {
-                Log "[!] Nuova versione disponibile: $remoteVersion (locale: $($script:currentVersion))"
-                $response = [System.Windows.Forms.MessageBox]::Show("Versione $remoteVersion disponibile (hai la $($script:currentVersion)).`nEseguire Full Update?", "Aggiornamento Disponibile", "YesNo", "Question")
+            if ($remoteVersion -ne $global:currentVersion) {
+                Log "[!] Nuova versione disponibile: $remoteVersion (locale: $($global:currentVersion))"
+                $response = [System.Windows.Forms.MessageBox]::Show("Versione $remoteVersion disponibile (hai la $($global:currentVersion)).`nEseguire Full Update?", "Aggiornamento Disponibile", "YesNo", "Question")
                 if ($response -eq "Yes") { Do-FullUpdate }
             } else {
-                Log "[OK] Script aggiornato da PeterS (v$($script:currentVersion))"
+                Log "[OK] Script aggiornato da PeterS (v$($global:currentVersion))"
             }
         } catch {
             Log "[!] Impossibile verificare aggiornamenti: $($_.Exception.Message)"
