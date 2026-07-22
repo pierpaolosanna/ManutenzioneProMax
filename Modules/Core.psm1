@@ -384,6 +384,22 @@ function Invoke-GitHubDownloadRecursive {
     }
 }
 
+function Clear-Log {
+    if ($script:logBox) {
+        $script:logBox.Text = ""
+    }
+    if ($script:logBuffer) {
+        $script:logBuffer.Clear()
+    }
+    Log "[OK] Log pulito."
+    Flush-LogBuffer
+    if ($script:logBox) {
+        $script:logBox.SelectionStart = 0
+        $script:logBox.ScrollToCaret()
+    }
+}
+
+
 # Espone le funzioni agli altri moduli
 Export-ModuleMember -Function @(
     'Set-CoreUI',
@@ -407,4 +423,5 @@ Export-ModuleMember -Function @(
     'Install-ModuleFromGitHub',
     'Ensure-ModulesForBlacklist',
     'Invoke-GitHubDownloadRecursive'
+	'Clear-Log' 
 )
