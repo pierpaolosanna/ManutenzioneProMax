@@ -1,10 +1,10 @@
 # ============================================================
 # UPGRADE.psm1 - Gestione aggiornamenti (Winget, Store, WU, Driver, FullUpdate, RunAll)
-# Versione: 1.0.0
+# Versione: 1.0.1 - CORRETTO CON VARIABILI GLOBALI
 # ============================================================
 
 function Do-Winget {
-    if ($script:isClosing -or (Test-Cancel)) { return }
+    if (Test-Cancel) { return }
     if (-not (Test-WingetAvailable)) { return }
     Update-Progress 10
     Update-Status "[...] Winget..." $fgColor
@@ -17,23 +17,25 @@ function Do-Winget {
 }
 
 function Do-StoreUpdate {
-    if ($script:isClosing -or (Test-Cancel)) { return }
+    if (Test-Cancel) { return }
     if (-not (Test-WingetAvailable)) { return }
     Update-Progress 30
     Update-Status "[...] Store..." $fgColor
     Flush-LogBuffer; Pump-UI
     Run-ProcessRealtime "winget" "upgrade --source msstore --all --accept-package-agreements --accept-source-agreements --include-unknown" "Store Update" 30 40
-    if ($script:logBox.Text -match "Non è stato trovato alcun pacchetto installato corrispondente ai criteri di input") {
-        $script:logBox.SuspendLayout()
-        $script:logBox.SelectionStart = $script:logBox.TextLength
-        $script:logBox.SelectionLength = 0
-        $script:logBox.SelectionColor = $successColor
-        $script:logBox.SelectionFont = New-Object System.Drawing.Font("Consolas", 12, [System.Drawing.FontStyle]::Bold)
-        $script:logBox.AppendText("`r`n[SUGGERIMENTO] CLICCA 'CONTROLLA AGGIORNAMENTI DISPONIBILI' NELLO STORE PER VERIFICARE MANUALMENTE.`r`n")
-        $script:logBox.SelectionColor = $script:logBox.ForeColor
-        $script:logBox.SelectionFont = New-Object System.Drawing.Font("Consolas", 12, [System.Drawing.FontStyle]::Regular)
-        $script:logBox.ResumeLayout()
-        $script:logBox.ScrollToCaret()
+    
+    # Correzione: usa $global:logBox invece di $script:logBox
+    if ($global:logBox.Text -match "Non è stato trovato alcun pacchetto installato corrispondente ai criteri di input") {
+        $global:logBox.SuspendLayout()
+        $global:logBox.SelectionStart = $global:logBox.TextLength
+        $global:logBox.SelectionLength = 0
+        $global:logBox.SelectionColor = $successColor
+        $global:logBox.SelectionFont = New-Object System.Drawing.Font("Consolas", 12, [System.Drawing.FontStyle]::Bold)
+        $global:logBox.AppendText("`r`n[SUGGERIMENTO] CLICCA 'CONTROLLA AGGIORNAMENTI DISPONIBILI' NELLO STORE PER VERIFICARE MANUALMENTE.`r`n")
+        $global:logBox.SelectionColor = $global:logBox.ForeColor
+        $global:logBox.SelectionFont = New-Object System.Drawing.Font("Consolas", 12, [System.Drawing.FontStyle]::Regular)
+        $global:logBox.ResumeLayout()
+        $global:logBox.ScrollToCaret()
     }
     try { Start-Process "ms-windows-store://downloadsandupdates" -WindowStyle Hidden -ErrorAction SilentlyContinue } catch { }
     Log " [OK] Store in background."
@@ -44,12 +46,12 @@ function Do-StoreUpdate {
 }
 
 function Do-SearchWU {
-    if ($script:isClosing -or (Test-Cancel)) { return }
+    if (Test-Cancel) { return }
     Log ""; Log "==============================================================================================="; Log "[>] RICERCA: Windows Update"; Log "==============================================================================================="
     Update-Progress 50
     Update-Status "[...] Ricerca WU..." $fgColor
     Flush-LogBuffer; Pump-UI
-    if (-not $isAdmin) {
+    if (-not $global:isAdmin) {
         Log "[!] Servono privilegi admin."
         Update-Status "[!] Privilegi insufficienti" $warningColor
         Flush-LogBuffer; Update-Progress 100; return
@@ -83,12 +85,12 @@ function Do-SearchWU {
 }
 
 function Do-InstallWU {
-    if ($script:isClosing -or (Test-Cancel)) { return }
+    if (Test-Cancel) { return }
     Log ""; Log "==============================================================================================="; Log "[>] INSTALLAZIONE: Windows Update"; Log "==============================================================================================="
     Update-Progress 70
     Update-Status "[...] Installazione WU..." $fgColor
     Flush-LogBuffer; Pump-UI
-    if (-not $isAdmin) {
+    if (-not $global:isAdmin) {
         Log "[X] Servono privilegi admin."
         Update-Status "[!] Privilegi insufficienti" $warningColor
         Flush-LogBuffer; Update-Progress 100; return
@@ -159,11 +161,11 @@ function Do-InstallWU {
 }
 
 function Do-DriverUpdate {
-    if ($script:isClosing -or (Test-Cancel)) { return }
+    if (Test-Cancel) { return }
     Update-Status "[...] Driver..." $accentColor
     Flush-LogBuffer; Pump-UI
     Log ""; Log "==============================================================================================="; Log "[>] AGGIORNAMENTO DRIVER"; Log "==============================================================================================="
-    if (-not $isAdmin) {
+    if (-not $global:isAdmin) {
         Log "[X] Richiesti privilegi admin per driver"
         Update-Status "[!] Admin richiesto" $warningColor
         Flush-LogBuffer; Update-Progress 100; return
@@ -216,17 +218,19 @@ function Do-DriverUpdate {
 
 function Do-FullUpdate {
     param([switch]$Force)
-    if ($script:isClosing -or (Test-Cancel)) { return }
+    if (Test-Cancel) { return }
     Log ""; Log "==============================================================================================="; if ($Force) { Log "[>] FULL UPDATE FORZATO" } else { Log "[>] FULL UPDATE - AGGIORNAMENTO COMPLETO" }; Log "==============================================================================================="
     Update-Status "[...] Verifica aggiornamento completo..." $infoColor
     Flush-LogBuffer; Pump-UI
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        
+        # ---- VERIFICA VERSIONE ----
         if (-not $Force) {
-            $remoteVersionUrl = $script:githubRawUrl + $script:versionFileName
+            $remoteVersionUrl = $global:githubRawUrl + $global:versionFileName
             $remoteVersion = (Invoke-WebRequest -Uri $remoteVersionUrl -UseBasicParsing -TimeoutSec 20).Content.Trim()
-            Log "[OK] Versione locale: $($script:currentVersion)"; Log "[OK] Versione remota: $remoteVersion"
-            if ($remoteVersion -eq $script:currentVersion) {
+            Log "[OK] Versione locale: $($global:currentVersion)"; Log "[OK] Versione remota: $remoteVersion"
+            if ($remoteVersion -eq $global:currentVersion) {
                 Log "[OK] Tutti i file sono già aggiornati."
                 Update-Status "[OK] Già aggiornato" $successColor
                 Update-Progress 100
@@ -237,16 +241,21 @@ function Do-FullUpdate {
         } else {
             Log "[i] Modalità forzata: download di tutti i file indipendentemente dalla versione."
         }
+        
         if (-not $Force) {
             $response = [System.Windows.Forms.MessageBox]::Show("Versione $remoteVersion disponibile.`n`nQuesta operazione aggiornerà TUTTI i file nella repository (escluse Prompt e Docs).`n`nProcedere?", "Full Update Disponibile", "YesNo", "Question")
             if ($response -ne "Yes") { Log "[i] Full Update annullato."; Update-Progress 100; return }
         }
-        $localDir = Split-Path -Parent $PSCommandPath
-        if (-not $localDir) {
-            Log "[X] Impossibile determinare la cartella di esecuzione."
+        
+        # ---- PERCORSO PRINCIPALE ----
+        $localDir = $global:scriptRoot
+        if (-not $localDir -or -not (Test-Path $localDir)) {
+            Log "[X] Impossibile determinare la cartella di esecuzione (scriptRoot non valido)."
             Update-Status "[X] Errore percorso" $exitColor
             Update-Progress 100; return
         }
+        
+        # ---- BACKUP ----
         $backupDir = Join-Path $localDir "backup_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
         New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
         Log "[OK] Backup creato in: $backupDir"
@@ -276,21 +285,24 @@ function Do-FullUpdate {
             }
         }
         Log "[OK] Backup di tutti i file completato."
-        $apiUrl = "https://api.github.com/repos/$($script:repoOwner)/$($script:repoName)/contents/"
+        
+        # ---- DOWNLOAD DAL REPOSITORY ----
+        $apiUrl = "https://api.github.com/repos/$($global:repoOwner)/$($global:repoName)/contents/"
         Log "[>] Download ricorsivo della repository..."
         Invoke-GitHubDownloadRecursive -ApiUrl $apiUrl -LocalPath $localDir
+        
         Log ""; Log "==============================================================================================="; Log "[OK] FULL UPDATE COMPLETATO!"; Log "     Backup salvato in: $backupDir"; Log "==============================================================================================="
         Update-Progress 100
         Update-Status "[OK] Full Update completato!" $successColor
         Flush-LogBuffer; Pump-UI
         $response = [System.Windows.Forms.MessageBox]::Show("Aggiornamento completato!`nRiavviare lo script con la nuova versione?", "Riavvio necessario", "YesNo", "Question")
         if ($response -eq "Yes") {
-            $exe = if ($isPwsh7) { "pwsh.exe" } else { "powershell.exe" }
+            $exe = if ($global:isPwsh7) { "pwsh.exe" } else { "powershell.exe" }
             $localScriptPath = $PSCommandPath
             if ($localScriptPath -and (Test-Path $localScriptPath)) {
                 Start-Process $exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$localScriptPath`""
-                $script:isClosing = $true
-                $script:form.Close()
+                $global:isClosing = $true
+                $global:form.Close()
             }
         }
     } catch {
@@ -301,8 +313,9 @@ function Do-FullUpdate {
     }
 }
 
+
 function Do-RunAll {
-    if ($script:isClosing -or (Test-Cancel)) { return }
+    if (Test-Cancel) { return }
     Log ""; Log "##################################################################################################"; Log "# UPGRADE PROGRAMMI #"; Log "##################################################################################################"; Log ""
     Update-Progress 0
     Flush-LogBuffer; Pump-UI
