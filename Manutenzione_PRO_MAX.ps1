@@ -26,7 +26,7 @@ if (Test-Path $corePath) { Import-Module $corePath -Force -ErrorAction Stop -War
 Write-Host "[OK] Caricato Core.psm1" -ForegroundColor Green
 
 # Carica gli altri moduli
-$modules = @("Upgrade", "Pulizia", "Rete", "Riparazione", "Sicurezza", "Diagnostica", "Sistema", "Dominio", "Backup", "Privacy", "Utility")
+$modules = @("Upgrade", "Pulizia", "Rete", "Riparazione", "Sicurezza", "Diagnostica", "Sistema", "Dominio", "Backup", "Privacy", "Utility", "MAS")
 Write-Host "[...] Caricamento moduli secondari..." -ForegroundColor Yellow
 foreach ($mod in $modules) {
     $modPath = Join-Path $scriptRoot "Modules\$mod.psm1"
@@ -277,7 +277,7 @@ function Build-GUI {
                 @{Text="❌ Rimuovi Shutdown"; Action={Do-RemoveShutdown}; Tooltip="Rimuove lo spegnimento programmato."}
                 @{Text="💬 AI Chat"; Action={Show-AIChatDialog}; Tooltip="Apre AI Chat."}
                 @{Text="🔍 Ricerca File"; Action={Show-SearchDialog}; Tooltip="Apre ricerca file."}
-                @{Text="⏹️ Annulla"; Action={$script:cancelRequested=$true}; Tooltip="Annulla l'operazione in corso."}
+                @{Text="🔑 MAS Activation"; Action={Invoke-MASActivation}; Tooltip="Avvia Microsoft Activation Scripts (MAS) per attivare Windows/Office."}
                 @{Text="🖥️ Assist. Remota"; Action={Do-RemoteAssist}; Tooltip="Avvia RustDesk."}
                 @{Text="🌐 Assist. LAN"; Action={Do-VNCViewer}; Tooltip="Avvia TightVNC Viewer."}
                 @{Text="🖥️ RDP LAN"; Action={Do-RDPManager}; Tooltip="Gestore sessioni RDP."}
