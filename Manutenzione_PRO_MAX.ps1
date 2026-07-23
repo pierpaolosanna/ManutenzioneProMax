@@ -26,7 +26,7 @@ if (Test-Path $corePath) { Import-Module $corePath -Force -ErrorAction Stop -War
 Write-Host "[OK] Caricato Core.psm1" -ForegroundColor Green
 
 # Carica gli altri moduli
-$modules = @("Upgrade", "Pulizia", "Rete", "Riparazione", "Sicurezza", "Diagnostica", "Sistema", "Dominio", "Backup", "Privacy", "Utility", "MAS")
+$modules = @("Upgrade", "Pulizia", "Rete", "Riparazione", "Sicurezza", "Diagnostica", "Sistema", "Dominio", "Backup", "Privacy", "Utility", "MAS", "ADB")
 Write-Host "[...] Caricamento moduli secondari..." -ForegroundColor Yellow
 foreach ($mod in $modules) {
     $modPath = Join-Path $scriptRoot "Modules\$mod.psm1"
@@ -162,6 +162,53 @@ function Build-GUI {
                 @{Text="▶️ UPGRADE TOTAL"; Action={Do-RunAll}; Tooltip="Esegue la sequenza completa di aggiornamento."}
             )
         }
+		"Android" = @{
+			Color = [System.Drawing.Color]::FromArgb(255, 200, 0)
+			Items = @(
+				@{Text="🔌 Installa Driver ADB"; Action={Install-ADBDrivers}; Tooltip="Scarica e installa ADB e driver USB."}
+				@{Text="📱 Controlla Dispositivi"; Action={Do-ADBDevices}; Tooltip="Verifica i dispositivi connessi."}
+				@{Text="📦 Gestione Pacchetti"; Action={Show-ADBPackageManager}; Tooltip="Visualizza, disabilita, disinstalla, pulisci cache."}
+				
+				# === BACKUP E RIPRISTINO ===
+				@{Text="💾 Backup Completo"; Action={Backup-ADBFull}; Tooltip="Backup completo del dispositivo (APK + dati + sistema)."}
+				@{Text="💾 Backup Dati App"; Action={Backup-ADBAppData}; Tooltip="Backup dei dati di una specifica app."}
+				@{Text="📦 Backup APK"; Action={Backup-ADBAPKs}; Tooltip="Estrae tutti gli APK delle app installate."}
+				@{Text="🔄 Ripristina Backup"; Action={Restore-ADBBackup}; Tooltip="Ripristina un backup dal file .ab."}
+				
+				# === GESTIONE FILE ===
+				@{Text="📂 Pull File (Phone->PC)"; Action={Pull-ADBFile}; Tooltip="Copia Phone to PC."}
+				@{Text="📂 Push File (PC->Phone)"; Action={Push-ADBFile}; Tooltip="Copia PC to Phone."}
+				
+				# === DIAGNOSTICA ===
+				@{Text="ℹ️ Info Dispositivo"; Action={Get-ADBDeviceInfo}; Tooltip="Mostra informazioni dettagliate su hardware e software."}
+				@{Text="🔋 Stato Batteria"; Action={Get-ADBBatteryStatus}; Tooltip="Mostra lo stato dettagliato della batteria."}
+				@{Text="📊 Top Processi"; Action={Get-ADBTopProcesses}; Tooltip="Mostra i processi che consumano più risorse."}
+				@{Text="🎥 Registra Schermo"; Action={Record-ADBScreen}; Tooltip="Registra il video dello schermo."}
+				
+				# === AMMINISTRAZIONE AVANZATA ===
+				@{Text="🔄 Riavvia Dispositivo"; Action={Do-ADBReboot}; Tooltip="Riavvia il dispositivo."}
+				@{Text="⚡ Riavvio Fastboot"; Action={Reboot-ADBFastboot}; Tooltip="Riavvia il dispositivo in modalità Fastboot."}
+				@{Text="🔧 Riavvio Recovery"; Action={Reboot-ADBRecovery}; Tooltip="Riavvia il dispositivo in modalità Recovery."}
+				@{Text="🗑️ Reset Dati App"; Action={Clear-ADBAppData}; Tooltip="Cancella tutti i dati di un'app (Clear Data)."}
+				@{Text="📶 Reset Impostazioni Rete"; Action={Reset-ADBNetworkSettings}; Tooltip="Resetta WiFi, Bluetooth, dati mobili e VPN."}
+				
+				# === SICUREZZA E PRIVACY ===
+				@{Text="🔒 Blocca Schermo"; Action={Lock-ADBScreen}; Tooltip="Blocca lo schermo del dispositivo."}
+				@{Text="🔓 Sblocca Schermo"; Action={Unlock-ADBScreen}; Tooltip="Tenta di sbloccare lo schermo."}
+				@{Text="⌨️ Invia Testo"; Action={Send-ADBText}; Tooltip="Invia testo al dispositivo (richiede focus su un campo)."}
+				@{Text="📷 Scatta Foto"; Action={Camera-ADBPhoto}; Tooltip="Scatta una foto con la fotocamera."}
+				
+				# === SMS E CHIAMATE ===
+				@{Text="📩 Leggi SMS"; Action={Get-ADBSMS}; Tooltip="Mostra gli ultimi SMS ricevuti."}
+				@{Text="📞 Effettua Chiamata"; Action={Call-ADBPhone}; Tooltip="Avvia una chiamata verso un numero."}
+				
+				# === UTILITY ===
+				@{Text="📸 Screenshot"; Action={Do-ADBScreenshot}; Tooltip="Acquisisce e salva screenshot sul desktop."}
+				@{Text="📥 Installa APK"; Action={Do-ADBInstallAPK}; Tooltip="Seleziona e installa un file APK."}
+				@{Text="📋 Logcat"; Action={Do-ADBLogcat}; Tooltip="Mostra le ultime 100 righe del logcat."}
+				@{Text="⚙️ Comando ADB"; Action={Do-ADBCustomCommand}; Tooltip="Esegui un comando ADB personalizzato."}
+			)
+		}
         "Pulizia" = @{
             Color = [System.Drawing.Color]::FromArgb(255, 180, 100)
             Items = @(
@@ -356,7 +403,7 @@ function Build-GUI {
     $catList = $categories.Keys | Sort-Object
     $numCols = [Math]::Ceiling($catList.Count / 2)
     $colWidth = 155
-    $catIcons = @{ "Upgrade" = "⬆️"; "Pulizia" = "🧹"; "Rete" = "🌐"; "Riparazione" = "🔧"; "Sicurezza" = "🛡️"; "Diagnostica" = "📊"; "Sistema" = "⚙️"; "Dominio" = "🏢"; "Backup" = "💾"; "Privacy" = "🔒"; "Utility" = "🧰" }
+    $catIcons = @{ "Upgrade" = "⬆️"; "Pulizia" = "🧹"; "Rete" = "🌐"; "Riparazione" = "🔧"; "Sicurezza" = "🛡️"; "Diagnostica" = "📊"; "Sistema" = "⚙️"; "Dominio" = "🏢"; "Backup" = "💾"; "Privacy" = "🔒"; "Utility" = "🧰"; "Android" = "📱" }
     for ($col = 0; $col -lt $numCols; $col++) {
         $categoryGrid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Absolute, $colWidth)))
         for ($row = 0; $row -lt 2; $row++) {
