@@ -1,6 +1,6 @@
 # ============================================================
 # CORE.psm1 - Funzioni di base per Manutenzione PRO MAX
-# Versione: 1.0.1
+# Versione: 1.0.2 - Migliorata compatibilità con moduli esterni
 # ============================================================
 
 # ---------- VARIABILI INTERNE DEL MODULO ----------
@@ -151,7 +151,14 @@ function Update-Status($msg, $color) {
 
 function Pump-UI {
     if (-not $script:isClosing) {
-        [System.Windows.Forms.Application]::DoEvents()
+        # Verifica se l'assembly Windows.Forms è caricato e se Application esiste
+        if (-not ([System.Windows.Forms.Application] -eq $null)) {
+            try {
+                [System.Windows.Forms.Application]::DoEvents()
+            } catch {
+                # Ignora errori se l'assembly non è disponibile (es. in ambienti di test)
+            }
+        }
     }
 }
 
@@ -409,7 +416,7 @@ Export-ModuleMember -Function @(
     'Flush-LogBuffer',
     'Log',
     'Log-Output',
-    'Log-Color',                    # <--- AGGIUNGI QUI
+    'Log-Color',
     'Update-Progress',
     'Update-Status',
     'Pump-UI',
@@ -422,6 +429,6 @@ Export-ModuleMember -Function @(
     'Run-SimpleCommand',
     'Install-ModuleFromGitHub',
     'Ensure-ModulesForBlacklist',
-    'Invoke-GitHubDownloadRecursive'
-	'Clear-Log' 
+    'Invoke-GitHubDownloadRecursive',  # <-- virgola aggiunta
+    'Clear-Log' 
 )
