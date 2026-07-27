@@ -2049,6 +2049,92 @@ function Do-ADBCustomCommand {
     }
 }
 
+
+# ---- AVVIA SCRCPY ----
+function Start-ADBScrcpy {
+    if (Test-Cancel) { return }
+    
+    Log ""; Log "==============================================================================================="
+    Log "[>] AVVIO SCRCPY"
+    Log "==============================================================================================="
+    Update-Status "[...] Verifica Scrcpy..." $global:infoColor
+    Flush-LogBuffer; Pump-UI
+
+    # ---- Verifica ADB ----
+    if (-not (Initialize-ADB)) {
+        Log "[X] ADB non trovato. Esegui prima 'Installa Driver ADB'."
+        Update-Status "[X] ADB non trovato" $global:exitColor
+        Flush-LogBuffer; Pump-UI
+        return
+    }
+
+    # Verifica dispositivi connessi
+    $output = & $script:adbPath devices 2>&1
+    $devices = $output | Select-String "device$" | ForEach-Object { $_ -split '\s+' | Select-Object -First 1 }
+    if (-not $devices) {
+        Log "[!] Nessun dispositivo ADB connesso."
+        Log "[i] Assicurati che il telefono sia collegato via USB e che il debug USB sia attivato."
+        Log "[i] Esegui 'Controlla Dispositivi' per verificare la connessione."
+        Update-Status "[!] Nessun dispositivo" $global:warningColor
+        Flush-LogBuffer; Pump-UI
+        return
+    }
+
+    # Prosegui con l'estrazione/avvio di scrcpy...
+    $zipPath = Join-Path $global:scriptRoot "lib\scrcpy.zip"
+    $extractDest = Join-Path $global:scriptRoot "lib"
+    $exePath = Join-Path $global:scriptRoot "lib\scrcpy\scrcpy.exe"
+
+    if (-not (Test-Path $zipPath)) {
+        Log "[X] File scrcpy.zip non trovato in: $zipPath"
+        Update-Status "[X] zip mancante" $global:exitColor
+        Flush-LogBuffer; Pump-UI
+        return
+    }
+
+    if (-not (Test-Path $exePath)) {
+        Log "[i] scrcpy.exe non trovato. Estrazione da scrcpy.zip..."
+        Update-Status "[...] Estrazione in corso..." $global:infoColor
+        Flush-LogBuffer; Pump-UI
+
+        try {
+            if (-not (Test-Path $extractDest)) {
+                New-Item -ItemType Directory -Force -Path $extractDest | Out-Null
+            }
+            Expand-Archive -Path $zipPath -DestinationPath $extractDest -Force -ErrorAction Stop
+            Log "[OK] Estrazione completata in: $extractDest"
+        } catch {
+            Log "[X] Errore durante l'estrazione: $($_.Exception.Message)"
+            Update-Status "[X] Errore estrazione" $global:exitColor
+            Flush-LogBuffer; Pump-UI
+            return
+        }
+    }
+
+    if (-not (Test-Path $exePath)) {
+        Log "[X] scrcpy.exe non trovato dopo l'estrazione. Verifica il contenuto del zip."
+        Update-Status "[X] scrcpy.exe mancante" $global:exitColor
+        Flush-LogBuffer; Pump-UI
+        return
+    }
+
+    Log "[OK] Avvio Scrcpy..."
+    Update-Status "[...] Avvio Scrcpy..." $global:infoColor
+    Flush-LogBuffer; Pump-UI
+
+    try {
+        Start-Process -FilePath $exePath -WindowStyle Normal
+        Log "[OK] Scrcpy avviato con successo!"
+        Update-Status "[OK] Scrcpy in esecuzione" $global:successColor
+    } catch {
+        Log "[X] Errore durante l'avvio di scrcpy.exe: $($_.Exception.Message)"
+        Update-Status "[X] Errore avvio" $global:exitColor
+    }
+
+    Log "==============================================================================================="
+    Flush-LogBuffer; Pump-UI
+}
+
 # ---- ESPORTAZIONE ----
 Export-ModuleMember -Function @(
     'Install-ADBDrivers',
@@ -2086,6 +2172,7 @@ Export-ModuleMember -Function @(
     'Lock-ADBScreen',
     'Unlock-ADBScreen',
     'Send-ADBText',
+	'Start-ADBScrcpy',
     'Camera-ADBPhoto',
     'Get-ADBSMS',
     'Call-ADBPhone'
