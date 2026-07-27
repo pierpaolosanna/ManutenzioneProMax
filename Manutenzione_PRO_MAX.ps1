@@ -208,6 +208,7 @@ function Build-GUI {
 				@{Text="📥 Installa APK"; Action={Do-ADBInstallAPK}; Tooltip="Seleziona e installa un file APK."}
 				@{Text="📋 Logcat"; Action={Do-ADBLogcat}; Tooltip="Mostra le ultime 100 righe del logcat."}
 				@{Text="⚙️ Comando ADB"; Action={Do-ADBCustomCommand}; Tooltip="Esegui un comando ADB personalizzato."}
+				@{Text="📱 Avvia Scrcpy"; Action={Start-ADBScrcpy}; Tooltip="Avvia Scrcpy per controllare lo smartphone da PC tramite USB (estrai automaticamente se necessario)."}
 			)
 		}
         "Pulizia" = @{
