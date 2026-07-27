@@ -59,6 +59,7 @@ $principal = New-Object Security.Principal.WindowsPrincipal($currUser)
 $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 # Colori (esportati come globali per i moduli)
+$global:StartupMessages = @()
 $global:bgColor = [System.Drawing.Color]::FromArgb(20, 20, 24)
 $global:bgPanel = [System.Drawing.Color]::FromArgb(28, 28, 34)
 $global:bgCard = [System.Drawing.Color]::FromArgb(36, 36, 42)
@@ -445,6 +446,7 @@ function Build-GUI {
                 $sender.ForeColor = [System.Drawing.Color]::White
                 $sender.FlatAppearance.BorderColor = $catColor
                 Update-Buttons
+				Show-CategoryHelp -CategoryName $script:selectedCategory
             })
             $categoryGrid.Controls.Add($btn, $col, $row)
             $categoryButtons[$catName] = $btn
@@ -458,6 +460,12 @@ function Build-GUI {
         $categoryButtons[$defaultCat].ForeColor = [System.Drawing.Color]::White
         $categoryButtons[$defaultCat].FlatAppearance.BorderColor = $catColor
     }
+
+
+    # Mostra le istruzioni per la categoria predefinita all'avvio
+
+    $headerPanel.Height = 40 + 2 * 22
+    $script:form.Controls.Add($headerPanel)
 
     # ---- PULSANTE PULISCI LOG ----
     $clearLogButton = New-Object System.Windows.Forms.Button
@@ -486,7 +494,7 @@ function Build-GUI {
     # ---- SEPARATORE ----
     $separator = New-Object System.Windows.Forms.Panel
     $separator.Dock = "Top"
-    $separator.Height = 2
+    $separator.Height = 1
     $separator.BackColor = $global:separatorColor
     $script:form.Controls.Add($separator)
 
@@ -504,42 +512,67 @@ function Build-GUI {
     $tableLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 85)))
     $tableLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
     $tableLayout.BackColor = $global:bgColor
+    $tableLayout.Padding = New-Object System.Windows.Forms.Padding(0)   # <--- AGGIUNTA QUESTA RIGA
     $mainPanel.Controls.Add($tableLayout)
 
     # ---- BOTTONI ----
+    $buttonScrollPanel = New-Object System.Windows.Forms.Panel
+    $buttonScrollPanel.Dock = "Fill"
+    $buttonScrollPanel.AutoScroll = $true
+    $buttonScrollPanel.BackColor = $global:bgPanel
+    $buttonScrollPanel.Padding = New-Object System.Windows.Forms.Padding(1, 120, 1, 6)   # Ridotto da 6 a 2
+    $tableLayout.Controls.Add($buttonScrollPanel, 0, 0)
+
+    # TableLayoutPanel per i pulsanti (cresce automaticamente in altezza)
     $buttonGrid = New-Object System.Windows.Forms.TableLayoutPanel
-    $buttonGrid.Dock = "Fill"
     $buttonGrid.ColumnCount = 1
     $buttonGrid.RowCount = 0
-    $buttonGrid.AutoScroll = $true
+    $buttonGrid.AutoSize = $true
+    $buttonGrid.AutoSizeMode = "GrowAndShrink"
+    $buttonGrid.Dock = "Top"
     $buttonGrid.BackColor = $global:bgPanel
-    $buttonGrid.Padding = New-Object System.Windows.Forms.Padding(6, 120, 6, 6)
-    $tableLayout.Controls.Add($buttonGrid, 0, 0)
+    $buttonScrollPanel.Controls.Add($buttonGrid)
+
+
+
+
 
     # ---- LOG ----
     $logPanel = New-Object System.Windows.Forms.Panel
     $logPanel.Dock = "Fill"
     $logPanel.BackColor = $global:bgColor
-    $logPanel.Padding = New-Object System.Windows.Forms.Padding(15, 5, 15, 5)
+    $logPanel.Padding = New-Object System.Windows.Forms.Padding(2, 5, 2, 5)   # Ridotto da 15 a 2
     $tableLayout.Controls.Add($logPanel, 1, 0)
+
+    # Pannello esterno: crea il bordo verde acceso
     $logBoxPanel = New-Object System.Windows.Forms.Panel
     $logBoxPanel.Dock = "Fill"
-    $logBoxPanel.BackColor = $global:logBg
-    $logBoxPanel.Padding = New-Object System.Windows.Forms.Padding(2, 85, 2, 2)
-    $logBoxPanel.BorderStyle = "FixedSingle"
+    $logBoxPanel.BackColor = [System.Drawing.Color]::Lime   # Verde acceso
+    $logBoxPanel.Padding = New-Object System.Windows.Forms.Padding(3)   # Spessore del bordo
+    $logBoxPanel.BorderStyle = "None"
     $logPanel.Controls.Add($logBoxPanel)
+
+    # Pannello interno: sfondo scuro per il log
+    $innerLogPanel = New-Object System.Windows.Forms.Padding
+    $innerLogPanel = New-Object System.Windows.Forms.Panel
+    $innerLogPanel.Dock = "Fill"
+    $innerLogPanel.BackColor = $global:logBg
+    $innerLogPanel.Padding = New-Object System.Windows.Forms.Padding(2, 85, 2, 2)
+    $logBoxPanel.Controls.Add($innerLogPanel)
+
+    # RichTextBox per i log
     $script:logBox = New-Object System.Windows.Forms.RichTextBox
     $script:logBox.Dock = "Fill"
     $script:logBox.BackColor = $global:logBg
     $script:logBox.ForeColor = [System.Drawing.Color]::FromArgb(200, 200, 210)
     $script:logBox.Font = New-Object System.Drawing.Font("Consolas", 12, [System.Drawing.FontStyle]::Regular)
     $script:logBox.ReadOnly = $true
-    $script:logBox.BorderStyle = "None"
+    $script:logBox.BorderStyle = "FixedSingle"
     $script:logBox.ScrollBars = "ForcedVertical"
-    $script:logBox.WordWrap = $false
+    $script:logBox.WordWrap = $true
     $script:logBox.DetectUrls = $false
     $script:logBox.ShortcutsEnabled = $true
-    $logBoxPanel.Controls.Add($script:logBox)
+    $innerLogPanel.Controls.Add($script:logBox)
 
     # ---- STATUS ----
     $statusPanel = New-Object System.Windows.Forms.Panel
@@ -589,48 +622,47 @@ function Build-GUI {
     $global:statusLabel = $script:statusLabel
     $global:form = $script:form
 
-    # ---- FUNZIONE UPDATE-BUTTONS ----
-    function Update-Buttons {
-        $buttonGrid.Controls.Clear()
-        $buttonGrid.RowCount = 0
-        if ([string]::IsNullOrEmpty($script:selectedCategory)) { return }
-        if (-not $categories.ContainsKey($script:selectedCategory)) { return }
-        $catData = $categories[$script:selectedCategory]
-        $categoryColor = $catData.Color
-        $items = $catData.Items
-        $rowIndex = 0
-        foreach ($btnData in $items) {
-            $btn = New-Object System.Windows.Forms.Button
-            $btn.Text = $btnData.Text
-            $btn.FlatStyle = "Flat"
-            $btn.FlatAppearance.BorderSize = 3
-            $btn.FlatAppearance.BorderColor = $categoryColor
-            $btn.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(80, 80, 100)
-            $btn.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(100, 100, 120)
-            $btn.BackColor = $global:bgCard
-            $btn.ForeColor = [System.Drawing.Color]::White
-            $btn.Font = New-Object System.Drawing.Font("Segoe UI Emoji", 9, [System.Drawing.FontStyle]::Bold)
-            if ($btnData.Text -match "Eleva Admin") {
-                $btn.BackColor = [System.Drawing.Color]::FromArgb(0, 160, 0)
-                $btn.FlatAppearance.BorderColor = [System.Drawing.Color]::Lime
-                $btn.Font = New-Object System.Drawing.Font("Segoe UI Emoji", 10, [System.Drawing.FontStyle]::Bold)
-                $btn.ForeColor = [System.Drawing.Color]::White
-            }
-            $btn.Cursor = [System.Windows.Forms.Cursors]::Hand
-            $btn.TextAlign = "MiddleLeft"
-            $btn.Padding = New-Object System.Windows.Forms.Padding(10, 0, 0, 0)
-            $btn.Height = 34
-            $btn.Margin = New-Object System.Windows.Forms.Padding(5, 4, 5, 4)
-            $btn.Dock = [System.Windows.Forms.DockStyle]::Fill
-            $btn.Add_Click($btnData.Action)
-            if ($btnData.Tooltip) { $tt = New-Object System.Windows.Forms.ToolTip; $tt.SetToolTip($btn, $btnData.Tooltip) }
-            $buttonGrid.RowCount++
-            $buttonGrid.Controls.Add($btn, 0, $rowIndex)
-            $buttonGrid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
-            $rowIndex++
-        }
-        $buttonGrid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
-    }
+# ---- FUNZIONE UPDATE-BUTTONS ----
+	function Update-Buttons {
+		$buttonGrid.Controls.Clear()
+		$buttonGrid.RowCount = 0
+		if ([string]::IsNullOrEmpty($script:selectedCategory)) { return }
+		if (-not $categories.ContainsKey($script:selectedCategory)) { return }
+		$catData = $categories[$script:selectedCategory]
+		$categoryColor = $catData.Color
+		$items = $catData.Items
+		$rowIndex = 0
+		foreach ($btnData in $items) {
+			$btn = New-Object System.Windows.Forms.Button
+			$btn.Text = $btnData.Text
+			$btn.FlatStyle = "Flat"
+			$btn.FlatAppearance.BorderSize = 3
+			$btn.FlatAppearance.BorderColor = $categoryColor
+			$btn.FlatAppearance.MouseOverBackColor = [System.Drawing.Color]::FromArgb(80, 80, 100)
+			$btn.FlatAppearance.MouseDownBackColor = [System.Drawing.Color]::FromArgb(100, 100, 120)
+			$btn.BackColor = $global:bgCard
+			$btn.ForeColor = [System.Drawing.Color]::White
+			$btn.Font = New-Object System.Drawing.Font("Segoe UI Emoji", 9, [System.Drawing.FontStyle]::Bold)
+			if ($btnData.Text -match "Eleva Admin") {
+				$btn.BackColor = [System.Drawing.Color]::FromArgb(0, 160, 0)
+				$btn.FlatAppearance.BorderColor = [System.Drawing.Color]::Lime
+				$btn.Font = New-Object System.Drawing.Font("Segoe UI Emoji", 10, [System.Drawing.FontStyle]::Bold)
+				$btn.ForeColor = [System.Drawing.Color]::White
+			}
+			$btn.Cursor = [System.Windows.Forms.Cursors]::Hand
+			$btn.TextAlign = "MiddleLeft"
+			$btn.Padding = New-Object System.Windows.Forms.Padding(10, 0, 0, 0)
+			$btn.Height = 34
+			$btn.Margin = New-Object System.Windows.Forms.Padding(5, 4, 5, 4)
+			$btn.Dock = [System.Windows.Forms.DockStyle]::Fill
+			$btn.Add_Click($btnData.Action)
+			if ($btnData.Tooltip) { $tt = New-Object System.Windows.Forms.ToolTip; $tt.SetToolTip($btn, $btnData.Tooltip) }
+			$buttonGrid.RowCount++
+			$buttonGrid.Controls.Add($btn, 0, $rowIndex)
+			$buttonGrid.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))
+			$rowIndex++
+		}
+	}
 
     Update-Buttons
 
@@ -641,49 +673,61 @@ function Build-GUI {
     $script:uiTimer.Start()
 
     # ---- EVENTI FORM ----
-    $script:form.Add_Shown({
-        Log-Color -TextBefore "  " -TextToColor "PRO MAX Maintenance v$($global:currentVersion) By Peters" -Color ([System.Drawing.Color]::Cyan) -FontStyle "Bold"
-        Log-Color -TextBefore " " -TextToColor "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | $psVer" -Color ([System.Drawing.Color]::Yellow) -FontStyle "Regular"
-        Log " Log: $logFile"
-        Log ""; Flush-LogBuffer
+$script:form.Add_Shown({
+    # Inizializzazione dei messaggi di startup
+    $global:StartupMessages = @()
+    
+    $script:logBox.SuspendLayout()
+    $script:logBox.SelectionStart = $script:logBox.TextLength
+    $script:logBox.SelectionLength = 0
+    $script:logBox.SelectionColor = $global:successColor
+    $script:logBox.SelectionFont = New-Object System.Drawing.Font("Consolas", 12, [System.Drawing.FontStyle]::Bold)
+    if ($global:isAdmin) {
+        $msg1 = "Sei già amministratore. Tutte le funzionalità sono disponibili."
+        $msg2 = "Crea sempre un punto di ripristino con Crea Ripristino prima di ogni modifica."
+        $global:StartupMessages += @{Text=$msg1; Color=$global:successColor; Bold=$true}
+        $global:StartupMessages += @{Text=$msg2; Color=$global:warningColor; Bold=$false}
+    } else {
+        $msg1 = "Esegui 'Eleva Admin' per ottenere le complete potenzialità."
+        $msg2 = "Crea sempre un punto di ripristino con Crea Ripristino prima di ogni modifica."
+        $global:StartupMessages += @{Text=$msg1; Color=$global:warningColor; Bold=$true}
+        $global:StartupMessages += @{Text=$msg2; Color=$global:warningColor; Bold=$false}
+    }
+    $script:logBox.AppendText("`r`n$msg1`r`n$msg2`r`n")
+    $script:logBox.SelectionColor = $script:logBox.ForeColor
+    $script:logBox.ResumeLayout()
 
-        $script:logBox.SuspendLayout()
-        $script:logBox.SelectionStart = $script:logBox.TextLength
-        $script:logBox.SelectionLength = 0
-        $script:logBox.SelectionColor = $global:successColor
-        $script:logBox.SelectionFont = New-Object System.Drawing.Font("Consolas", 12, [System.Drawing.FontStyle]::Bold)
-        if ($global:isAdmin) {
-            $msg = " Sei già amministratore. Tutte le funzionalità sono disponibili.`nCrea sempre un punto di ripristino con Crea Ripristino prima di ogni modifica."
+    $script:logBox.SelectionStart = 0
+    $script:logBox.ScrollToCaret()
+    [System.Windows.Forms.Application]::DoEvents()
+
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    try {
+        $remoteVersionUrl = $global:githubRawUrl + $global:versionFileName
+        $remoteVersion = (Invoke-WebRequest -Uri $remoteVersionUrl -UseBasicParsing -TimeoutSec 20).Content.Trim()
+        if ($remoteVersion -ne $global:currentVersion) {
+            $msg = "Nuova versione disponibile: $remoteVersion (locale: $($global:currentVersion)). Eseguire Full Update?"
+            $global:StartupMessages += @{Text=$msg; Color=$global:warningColor; Bold=$true}
+            Log "[!] Nuova versione disponibile: $remoteVersion (locale: $($global:currentVersion))"
+            $response = [System.Windows.Forms.MessageBox]::Show("Versione $remoteVersion disponibile (hai la $($global:currentVersion)).`nEseguire Full Update?", "Aggiornamento Disponibile", "YesNo", "Question")
+            if ($response -eq "Yes") { Do-FullUpdate }
         } else {
-            $msg = "🔧 Esegui 'Eleva Admin' per ottenere le complete potenzialità.`nCrea sempre un punto di ripristino con Crea Ripristino prima di ogni modifica."
+            $msg = "Script aggiornato da PeterS (v$($global:currentVersion))"
+            $global:StartupMessages += @{Text=$msg; Color=$global:successColor; Bold=$true}
+            Log "[OK] Script aggiornato da PeterS (v$($global:currentVersion))"
         }
-        $script:logBox.AppendText("`r`n$msg`r`n")
-        $script:logBox.SelectionColor = $script:logBox.ForeColor
-        $script:logBox.ResumeLayout()
+    } catch {
+        Log "[!] Impossibile verificare aggiornamenti: $($_.Exception.Message)"
+        $global:StartupMessages += @{Text="Impossibile verificare aggiornamenti: $($_.Exception.Message)"; Color=$global:warningColor; Bold=$true}
+    }
+    Flush-LogBuffer; Pump-UI
 
-        $script:logBox.SelectionStart = 0
-        $script:logBox.ScrollToCaret()
-        [System.Windows.Forms.Application]::DoEvents()
+    # Ora che i messaggi sono pronti, mostra le istruzioni della categoria predefinita
+    Show-CategoryHelp -CategoryName $defaultCat
 
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        try {
-            $remoteVersionUrl = $global:githubRawUrl + $global:versionFileName
-            $remoteVersion = (Invoke-WebRequest -Uri $remoteVersionUrl -UseBasicParsing -TimeoutSec 20).Content.Trim()
-            if ($remoteVersion -ne $global:currentVersion) {
-                Log "[!] Nuova versione disponibile: $remoteVersion (locale: $($global:currentVersion))"
-                $response = [System.Windows.Forms.MessageBox]::Show("Versione $remoteVersion disponibile (hai la $($global:currentVersion)).`nEseguire Full Update?", "Aggiornamento Disponibile", "YesNo", "Question")
-                if ($response -eq "Yes") { Do-FullUpdate }
-            } else {
-                Log "[OK] Script aggiornato da PeterS (v$($global:currentVersion))"
-            }
-        } catch {
-            Log "[!] Impossibile verificare aggiornamenti: $($_.Exception.Message)"
-        }
-        Flush-LogBuffer; Pump-UI
-
-        $script:logBox.SelectionStart = 0
-        $script:logBox.ScrollToCaret()
-    })
+    $script:logBox.SelectionStart = 0
+    $script:logBox.ScrollToCaret()
+})
 
     $script:form.Add_FormClosing({
         $script:isClosing = $true
