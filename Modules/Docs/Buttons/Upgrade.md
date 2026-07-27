@@ -57,6 +57,3 @@ Al termine, mostra il messaggio di completamento.
 - **Crea Ripristino** e **Eleva Admin** sono disponibili per essere eseguiti prima di qualsiasi modifica.
 - `UPGRADE TOTAL` è consigliato per una manutenzione completa del sistema.
 - Dopo l’installazione di aggiornamenti Windows, **riavvia** il PC se richiesto.
-===============================================================================================
-Per eseguire una funzione, clicca sul pulsante corrispondente a sinistra.
-===============================================================================================

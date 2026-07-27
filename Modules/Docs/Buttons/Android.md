@@ -84,6 +84,3 @@ Se Scrcpy mostra il video ma non risponde ai clic/tocchi, e vedi errori come `IN
 - Per i comandi che richiedono interazione, tieni il telefono sbloccato e segui le istruzioni sullo schermo.
 - La selezione multipla nella Gestione Pacchetti permette di agire su più app contemporaneamente (utile per disabilitare bloatware in blocco).
 - **Suggerimento:** Crea sempre un punto di ripristino del sistema prima di disinstallare o modificare app di sistema.
-===============================================================================================
-Per eseguire una funzione, clicca sul pulsante corrispondente a sinistra.
-===============================================================================================

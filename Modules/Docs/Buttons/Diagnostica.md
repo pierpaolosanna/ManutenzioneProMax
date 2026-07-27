@@ -1,5 +1,4 @@
 # DIAGNOSTICA - ISTRUZIONI
-
 Questa sezione fornisce strumenti per analizzare lo stato del sistema: hardware, prestazioni, processi, spazio su disco e servizi.  
 Tutti i comandi sono eseguiti in locale sul PC.
 ## 💻 Info Sistema
@@ -49,6 +48,3 @@ Per ogni servizio viene indicato se è in esecuzione (`OK`) o fermo (`--`).
 - Tutte le funzioni sono **non invasive** – leggono informazioni, non modificano il sistema.
 - Se un comando non trova dati (es. batteria assente), viene segnalato con un messaggio informativo.
 - Per ottenere metriche più accurate, esegui i comandi in momenti di basso carico.
-===============================================================================================
-Per eseguire una funzione, clicca sul pulsante corrispondente a sinistra.
-===============================================================================================

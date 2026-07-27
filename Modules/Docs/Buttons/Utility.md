@@ -65,6 +65,3 @@ Apre un'interfaccia grafica per gestire le sessioni **Remote Desktop (RDP)**.
 - **Assistenza LAN (TightVNC)** richiede che il file `lib\tvnviewer.exe` sia presente. Se manca, scaricalo manualmente da [TightVNC](https://www.tightvnc.com/download.php).
 - **RDP Manager** memorizza le password in chiaro nel file JSON; usalo solo in ambienti sicuri.
 - Le operazioni di **shutdown/riavvio** sono immediate e chiudono tutte le applicazioni senza salvare.
-===============================================================================================
-Per eseguire una funzione, clicca sul pulsante corrispondente a sinistra.
-===============================================================================================

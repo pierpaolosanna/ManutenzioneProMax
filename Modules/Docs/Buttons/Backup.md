@@ -28,7 +28,6 @@ Backup con **massima compressione** utilizzando 7-Zip (se disponibile).
 - Al termine: chiede se aprire la cartella di destinazione
 **Quando usarlo:** Backup di grandi dimensioni (diversi GB), quando si vuole risparmiare spazio su disco o si ha tempo a disposizione.
 ## ⚠️ Differenze tra i due metodi
-
 | Caratteristica | Backup Files | Backup Avanzato |
 |----------------|--------------|-----------------|
 | Strumento | Compress-Archive (PowerShell) | 7-Zip |
@@ -37,12 +36,8 @@ Backup con **massima compressione** utilizzando 7-Zip (se disponibile).
 | Dimensione file | Buona | Eccellente |
 | Multithreading | No | Sì |
 | Dipendenze | Nessuna | 7-Zip richiesto |
-
 ## 📌 Note Generali
 - **L'esclusione "backup\*"** è automatica in entrambi i metodi per evitare di includere backup precedenti all'interno del nuovo backup.
 - Se nella cartella origine sono presenti cartelle o file che iniziano con `backup`, vengono saltati automaticamente.
 - Per cartelle con molti file piccoli, il backup avanzato potrebbe risultare molto più efficiente.
 - Il backup standard è consigliato per backup rapidi di cartelle di dimensioni contenute.
-===============================================================================================
-Per eseguire una funzione, clicca sul pulsante corrispondente a sinistra.
-===============================================================================================

@@ -1,5 +1,4 @@
 # RETE - ISTRUZIONI
-
 Questa sezione raggruppa strumenti per la gestione e diagnostica della rete: DNS, IP, Wi‑Fi, speedtest, traceroute, whois e verifica blacklist.
 ## 🌐 Flush DNS
 Svuota la cache DNS locale (`ipconfig /flushdns`).  
@@ -65,6 +64,3 @@ Mostra un riepilogo con il numero totale di segnalazioni e l’elenco dettagliat
 - Le funzioni che modificano la rete (**Reset Winsock, Reset Rete, Cambia DNS**) richiedono **privilegi amministrativi**.
 - **Blacklist Check** è la funzione più pesante: utilizza molte query DNS e una richiesta web. Pazientare.
 - Per uno speedtest affidabile, si consiglia di chiudere altre applicazioni che usano banda.
-===============================================================================================
-Per eseguire una funzione, clicca sul pulsante corrispondente a sinistra.
-===============================================================================================

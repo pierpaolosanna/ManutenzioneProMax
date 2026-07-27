@@ -19,6 +19,3 @@ Al termine mostra un riepilogo con lo stato di ogni test.
 - **Scan Defender** non richiede privilegi amministrativi, ma per alcune operazioni potrebbe essere necessario.
 - **Event Log** e **Health Check** leggono informazioni senza modificare il sistema.
 - Se **Health Check** segnala problemi, esegui **"SFC + DISM"** dalla sezione **Riparazione** per risolverli.
-===============================================================================================
-Per eseguire una funzione, clicca sul pulsante corrispondente a sinistra.
-===============================================================================================
