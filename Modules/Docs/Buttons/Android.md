@@ -43,6 +43,41 @@ Questa sezione apre una finestra dedicata per gestire le app installate.
 - **Installa APK** – Apri un file `.apk` dal PC e lo installa sul dispositivo.
 - **Logcat** – Mostra le ultime 100 righe del log di sistema (utile per debugging). Il log viene aperto in un file di testo.
 - **Comando ADB** – Esegui un comando ADB personalizzato (es. `shell ls /sdcard`). Per operazioni non coperte dai pulsanti predefiniti.
+## 📱 Scrcpy – Controllo Smartphone da PC
+**A cosa serve:**  
+Scrcpy è uno strumento che permette di **visualizzare e controllare lo schermo del telefono Android** direttamente dal PC tramite cavo USB. È utile per:
+- Assistere a distanza un utente
+- Eseguire presentazioni o dimostrazioni
+- Giocare a giochi mobile con mouse e tastiera
+- Testare app in ambiente controllato
+- Eseguire operazioni di screenshot/registrazione senza toccare il dispositivo
+**Prerequisiti:**  
+- ADB installato e funzionante (se non lo è, esegui prima **"Installa Driver ADB"**)  
+- Debug USB attivato sul telefono (si attiva nelle Opzioni sviluppatore)  
+- Cavo USB funzionante e consenso alla connessione ADB sul dispositivo
+**Come usarlo:**  
+Clicca sul pulsante **"📱 Avvia Scrcpy"** nella sezione Android.  
+Se Scrcpy non è ancora estratto, lo script lo farà automaticamente dal file `lib\scrcpy.zip`.  
+Si aprirà una finestra che mostra lo schermo del telefono: puoi interagire con mouse e tastiera come se stessi toccando lo schermo.
+**⚠️ Problema comune: "Non riesco a controllare il telefono"**  
+Se Scrcpy mostra il video ma non risponde ai clic/tocchi, e vedi errori come `INJECT_EVENTS`, significa che il telefono blocca i comandi di input per sicurezza.
+**Come risolvere:**  
+1. **Abilita le Opzioni sviluppatore** (se non già fatto):  
+   - Vai in **Impostazioni** → **Informazioni sul telefono** (o "Info sul dispositivo")  
+   - Tocca **"Numero build"** (o "Versione MIUI") **7 volte** finché non vedi il messaggio *"Ora sei uno sviluppatore!"*  
+2. **Attiva le impostazioni di sicurezza**:  
+   - Torna al menu principale e apri **Impostazioni aggiuntive** → **Opzioni sviluppatore**  
+   - Assicurati che **"USB Debugging"** sia attivo (lo è se Scrcpy mostra il video)  
+   - Cerca e attiva l'opzione **"USB Debugging (Security Settings)"**  
+     Su alcuni dispositivi Xiaomi/HyperOS potrebbe chiamarsi **"Consenti di simulare i tocchi"** o **"Simulate touch events"**  
+3. **Riavvia il telefono** – necessario per applicare le modifiche  
+4. **Ricollega il telefono al PC**, accetta le autorizzazioni ADB e riprova a lanciare Scrcpy
+**Se il problema persiste, prova anche:**  
+- Modalità USB: imposta su **"Trasferimento file (MTP)"**  
+- Riavvia ADB: da terminale esegui `adb kill-server` e `adb start-server`  
+- Disabilita temporaneamente "MIUI Optimization" nelle Opzioni sviluppatore  
+- Aggiorna Scrcpy all'ultima versione da [sito ufficiale](https://github.com/Genymobile/scrcpy)  
+- Prova da terminale: `scrcpy --no-clean`
 ## 📌 Note Generali
 - Prima di usare i comandi, assicurati che il dispositivo sia connesso e che il debug USB sia attivato.
 - Se il dispositivo non viene riconosciuto, esegui **"Installa Driver ADB"**.
