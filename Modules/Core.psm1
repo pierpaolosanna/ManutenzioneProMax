@@ -407,6 +407,126 @@ function Clear-Log {
 }
 
 
+function Show-CategoryHelp {
+    param(
+        [string]$CategoryName
+    )
+    
+    if ([string]::IsNullOrEmpty($CategoryName)) {
+        Log "[i] Nessuna categoria specificata."
+        return
+    }
+    
+    $docPath = Join-Path $global:scriptRoot "Modules\Docs\Buttons\$CategoryName.md"
+    
+    if (-not (Test-Path $docPath)) {
+        Log ""
+        Log "==============================================================================================="
+        Log "[i] Nessuna istruzione disponibile per la categoria '$CategoryName'."
+        Log "[i] Crea il file: $docPath"
+        Log "==============================================================================================="
+        Log ""
+        return
+    }
+    
+    try {
+        $content = Get-Content -Path $docPath -Encoding UTF8 -ErrorAction Stop
+        
+        Clear-Log
+
+        # ---- SCRIVI I MESSAGGI DI STARTUP (se presenti) ----
+        if ($global:StartupMessages -and $global:StartupMessages.Count -gt 0) {
+            foreach ($msg in $global:StartupMessages) {
+                if ($msg -is [hashtable]) {
+                    $text = $msg.Text
+                    $color = if ($msg.Color) { $msg.Color } else { [System.Drawing.Color]::White }
+                    $bold = if ($msg.Bold) { "Bold" } else { "Regular" }
+                    Log-Color -TextBefore "" -TextToColor $text -Color $color -FontStyle $bold
+                } else {
+                    Log $msg
+                }
+            }
+            Log ""   # riga vuota per separare
+        }
+
+        # ---- PROCESSO IL CONTENUTO DEL FILE MARKDOWN ----
+        $inTitle = $false
+        foreach ($line in $content) {
+            $trimmedLine = $line.Trim()
+            if ([string]::IsNullOrEmpty($trimmedLine)) {
+                Log ""
+                continue
+            }
+            
+            # TITOLI MARKDOWN
+            if ($trimmedLine -match '^(#+)\s+(.+)$') {
+                $titleLevel = $matches[1].Length
+                $titleText = $matches[2].Trim()
+                if ($titleLevel -eq 1) {
+                    Log-Color -TextBefore "" -TextToColor "=== $titleText ===" -Color ([System.Drawing.Color]::Cyan) -FontStyle "Bold"
+                    $inTitle = $true
+                } elseif ($titleLevel -eq 2) {
+                    Log-Color -TextBefore "" -TextToColor "  $titleText" -Color ([System.Drawing.Color]::Yellow) -FontStyle "Bold"
+                    $inTitle = $true
+                } else {
+                    Log "  $titleText"
+                    $inTitle = $false
+                }
+                continue
+            }
+            
+            # TESTO IN GRASSETTO
+            if ($trimmedLine -match '\*\*(.+?)\*\*') {
+                $cleanLine = $trimmedLine -replace '\*\*', ''
+                if ($trimmedLine -match '^\- (.+)$') {
+                    Log-Color -TextBefore "  • " -TextToColor $cleanLine -Color ([System.Drawing.Color]::White) -FontStyle "Regular"
+                } else {
+                    Log-Color -TextBefore "  " -TextToColor $cleanLine -Color ([System.Drawing.Color]::White) -FontStyle "Regular"
+                }
+                continue
+            }
+            
+            # ELENCHI PUNTATI
+            if ($trimmedLine -match '^[\-\*]\s+(.+)$') {
+                $itemText = $matches[1]
+                Log-Color -TextBefore "  • " -TextToColor $itemText -Color ([System.Drawing.Color]::White) -FontStyle "Regular"
+                continue
+            }
+            
+            # NOTE SPECIALI
+            if ($trimmedLine -match '^(Nota|Attenzione|Importante|Suggerimento):\s*(.+)$') {
+                $label = $matches[1]
+                $rest = $matches[2]
+                Log-Color -TextBefore "  " -TextToColor "${label}:" -Color ([System.Drawing.Color]::InfoColor) -FontStyle "Bold"
+                Log-Color -TextBefore "  " -TextToColor $rest -Color ([System.Drawing.Color]::White) -FontStyle "Regular"
+                continue
+            }
+            
+            # TESTO NORMALE
+            Log-Color -TextBefore "  " -TextToColor $trimmedLine -Color ([System.Drawing.Color]::White) -FontStyle "Regular"
+        }
+        
+        # ---- Piè di pagina ----
+        Log-Color -TextBefore "" -TextToColor "Per eseguire una funzione, clicca sul pulsante corrispondente a sinistra." -Color ([System.Drawing.Color]::Cyan) -FontStyle "Bold"
+        
+        # ---- FORZA IL FLUSH DEL BUFFER PER SCRIVERE TUTTO IL TESTO ----
+        Flush-LogBuffer
+        
+        # ---- SCORRI ALL'INIZIO DEL LOG ----
+        if ($script:logBox) {
+            $script:logBox.SelectionStart = 0
+            $script:logBox.SelectionLength = 0
+            $script:logBox.ScrollToCaret()
+        }
+        
+    } catch {
+        Log "[X] Errore durante la lettura delle istruzioni: $($_.Exception.Message)"
+    }
+}
+
+
+
+
 # Espone le funzioni agli altri moduli
 Export-ModuleMember -Function @(
     'Set-CoreUI',
@@ -429,6 +549,7 @@ Export-ModuleMember -Function @(
     'Run-SimpleCommand',
     'Install-ModuleFromGitHub',
     'Ensure-ModulesForBlacklist',
-    'Invoke-GitHubDownloadRecursive',  # <-- virgola aggiunta
-    'Clear-Log' 
+    'Invoke-GitHubDownloadRecursive',
+    'Clear-Log',
+    'Show-CategoryHelp'         # <--- AGGIUNGI QUESTA RIGA
 )
