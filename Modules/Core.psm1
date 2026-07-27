@@ -364,7 +364,7 @@ function Invoke-GitHubDownloadRecursive {
 
     foreach ($item in $items) {
         if ($item.type -eq "dir") {
-            if ($item.name -in @("Prompt", "Docs")) { 
+            if ($item.name -in @("Prompt")) { 
                 Log "[i] Saltata cartella: $($item.name) (esclusa)"
                 continue 
             }
