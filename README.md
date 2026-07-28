@@ -15,9 +15,6 @@
 ## 🚀 **All-in-one Windows maintenance and diagnostics tool**
 
 **Portable, modular, self-updating** – now with Android device management (ADB), Microsoft Activation Scripts (MAS), and contextual help for every category.
-
-![Dark GUI Preview](https://via.placeholder.com/800x450/1a1a1a/00ff00?text=Manutenzione+PRO+MAX+GUI+Preview)
-
 ---
 
 ## 📑 **Indice**
