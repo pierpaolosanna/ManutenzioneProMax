@@ -270,7 +270,7 @@ Esclusione: Le cartelle che iniziano con backup vengono automaticamente escluse 
 
 📈 Versioni
 Versione	Data	Novità
-3.1.0	2024-07-21	Architettura modulare, Scansione Rete Pro, correzioni Blacklist, Ping Test, colori log
+3.1.0	2026-07-28	Architettura modulare, Scansione Rete Pro, correzioni Blacklist, Ping Test, colori log
 3.0.5	2024-07-15	Correzioni e ottimizzazioni
 3.0.4	2024-07-10	Aggiunto Full Update Script, migliorato Upgrade Total
 3.0.3	2024-07-05	Modularità, AI Chat, Ricerca File, DPI Scaling
