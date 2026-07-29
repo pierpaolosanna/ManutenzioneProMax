@@ -1,5 +1,13 @@
 # ⚡ Manutenzione PRO MAX v3.1.0
 
+## 👨‍💻 Autore e Manutentore
+Questo progetto è creato e mantenuto da **Pierpaolo Sanna**.
+- **GitHub:** [@pierpaolosanna](https://github.com/pierpaolosanna)
+- **Repository ufficiale:** [ManutenzioneProMax](https://github.com/pierpaolosanna/ManutenzioneProMax)
+
+Se hai suggerimenti, segnalazioni di bug o vuoi contribuire allo sviluppo, apri pure una **Issue** o una **Pull Request** sul repository ufficiale. 
+Lo script verifica automaticamente la presenza di nuove versioni direttamente da questo repository!
+
 > ⚠️ **Utilizzare a proprio rischio. Nessuna garanzia espressa o implicita.**  
 > Use at your own risk. No warranties expressed or implied.
 
