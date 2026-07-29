@@ -288,19 +288,31 @@
 
 ---
 
-## 🤖 **AI Chat (Modulo AICHAT.ps1)**
+# 🤖 **Assistente AI Chat (Modulo AICHAT.ps1)**
 
-| Funzione | Descrizione |
-|----------|-------------|
-| 🌐 **Provider** | Supporto per Gemini, Groq, Cloudflare e Bynara |
-| 🧠 **Modelli** | Ogni provider ha una lista di modelli selezionabili |
-| 🤖 **Agenti** | Carica automaticamente i file `.md` dalla cartella `Prompt/` come System Prompt |
-| 💾 **Salva Agente** | Salva il prompt corrente come nuovo agente su disco |
-| 🌍 **Ricerca Web** | Integra DDG e Wikipedia per risposte aggiornate |
-| 📎 **Allegati** | Supporta PDF, DOC, DOCX, XLS, XLSX e testuali |
-| 📊 **Statistiche** | Mostra i token utilizzati per sessione e per modello |
+L'assistente AI integrato è stato progettato per rispondere a domande specifiche sul software **Manutenzione PRO MAX**, sui suoi moduli e sulle sue funzionalità.
+
+### 🧠 **Prompt di Sistema Personalizzabile**
+Il comportamento e le conoscenze dell'assistente sono interamente definiti dal file `prompt.txt` situato in `Modules\Docs\Buttons\`. Puoi modificare questo file per adattare l'AI alle tue esigenze specifiche.
+
+### ⚡ **Elaborazione Asincrona**
+Le richieste vengono elaborate in background tramite `Start-Job`:
+- **L'interfaccia rimane reattiva** mentre l'AI pensa e genera la risposta.
+- Una barra di avanzamento e un indicatore di stato ti tengono aggiornato sull'elaborazione.
+- Puoi interrompere la richiesta in qualsiasi momento tramite il pulsante **"⛔ Annulla"**.
+
+### 🚀 **Interfaccia Pulita e Intuitiva**
+- Finestra dedicata e ben organizzata con input testuale multiriga.
+- **Tasto Invio** per inviare direttamente il messaggio (usa `Shift+Invio` per andare a capo).
+- Pulsante **"🗑️ Cancella"** per azzerare la cronologia della chat e ripartire da zero.
+
+### 🎨 **Log Colorato per una Lettura Immediata**
+- I messaggi dell'utente sono visualizzati in **Ciano Grassetto+Corsivo**.
+- Le risposte dell'assistente sono in **Verde Chiaro** con testo bianco normale.
+- Ogni interazione è corredata da un timestamp per tenere traccia dei dialoghi.
 
 ---
+> **Nota Tecnica:** Questa versione dell'AI Chat supporta attualmente un singolo provider API (`llm7.io`) e un modello predefinito. Le risposte sono generate esclusivamente sulla base del contenuto del file `prompt.txt` e della domanda dell'utente.
 
 ## 🔍 **Ricerca File (Modulo Search.ps1)**
 
