@@ -45,8 +45,8 @@ foreach ($mod in $modules) {
 Write-Host "[OK] Caricati tutti i moduli" -ForegroundColor Green
 
 # Carica AICHAT e Search (invariati)
-$aiChatPath = Join-Path $scriptRoot "Modules\AICHAT.ps1"
-if (Test-Path $aiChatPath) { . $aiChatPath; Write-Host "[OK] Caricato AICHAT.ps1" -ForegroundColor Green }
+# $aiChatPath = Join-Path $scriptRoot "Modules\AICHAT.ps1"
+# if (Test-Path $aiChatPath) { . $aiChatPath; Write-Host "[OK] Caricato AICHAT.ps1" -ForegroundColor Green }
 $searchPath = Join-Path $scriptRoot "Modules\Search.ps1"
 if (Test-Path $searchPath) { . $searchPath; Write-Host "[OK] Caricato Search.ps1" -ForegroundColor Green }
 
@@ -324,7 +324,24 @@ function Build-GUI {
                 @{Text="⏻ Arresta PC"; Action={Start-Process "shutdown.exe" -ArgumentList "-s -f -t 00"}; Tooltip="Spegne il computer."}
                 @{Text="⏰ Shutdown Sched."; Action={Do-ScheduleShutdown}; Tooltip="Programma spegnimento forzato."}
                 @{Text="❌ Rimuovi Shutdown"; Action={Do-RemoveShutdown}; Tooltip="Rimuove lo spegnimento programmato."}
-                @{Text="💬 AI Chat"; Action={Show-AIChatDialog}; Tooltip="Apre AI Chat."}
+                @{Text="💬 AI Chat"; Action={
+					# Caricamento lazy del modulo AICHAT al primo click
+					if (-not (Get-Command Show-AIChatDialog -ErrorAction SilentlyContinue)) {
+						$aiChatPath = Join-Path $global:scriptRoot "Modules\AICHAT.ps1"
+						if (Test-Path $aiChatPath) { 
+							. $aiChatPath 
+							Log "[OK] AICHAT caricato al volo"
+						} else {
+							[System.Windows.Forms.MessageBox]::Show(
+								"Modulo AICHAT.ps1 non trovato in:`n$aiChatPath",
+								"Errore", "OK", "Error"
+							)
+							return
+						}
+					}
+					# Ora la funzione esiste, chiamala
+					Show-AIChatDialog
+				}; Tooltip="Apre la chat con intelligenza artificiale (caricamento al volo)."}
                 @{Text="🔍 Ricerca File"; Action={Show-SearchDialog}; Tooltip="Apre ricerca file."}
                 @{Text="🔑 MAS Activation"; Action={Invoke-MASActivation}; Tooltip="Avvia Microsoft Activation Scripts (MAS) per attivare Windows/Office."}
                 @{Text="🖥️ Assist. Remota"; Action={Do-RemoteAssist}; Tooltip="Avvia RustDesk."}
@@ -334,18 +351,19 @@ function Build-GUI {
         }
     }
 
-    # ---- HEADER con 3 colonne ----
+    # ---- HEADER con 4 colonne ----
     $headerPanel = New-Object System.Windows.Forms.Panel
     $headerPanel.Dock = "Top"
     $headerPanel.BackColor = $global:bgPanel
     $headerPanel.Padding = New-Object System.Windows.Forms.Padding(0, 0, 0, 0)
     $headerTable = New-Object System.Windows.Forms.TableLayoutPanel
     $headerTable.Dock = "Fill"
-    $headerTable.ColumnCount = 3                     # <--- 3 colonne
+    $headerTable.ColumnCount = 4                     # <--- CAMBIATO DA 3 A 4
     $headerTable.RowCount = 1
     $headerTable.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))     # Colonna 0: titolo
     $headerTable.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100))) # Colonna 1: categorie
-    $headerTable.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))     # Colonna 2: pulsante pulisci log
+    $headerTable.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))     # Colonna 2: pulisci log
+    $headerTable.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))     # Colonna 3: chat (NUOVA)
     $headerTable.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
     $headerTable.BackColor = $global:bgPanel
     $headerPanel.Controls.Add($headerTable)
@@ -488,6 +506,40 @@ function Build-GUI {
     })
 
     $headerTable.Controls.Add($clearLogButton, 2, 0)
+    # ---- PULSANTE CHAT ----
+    $chatButton = New-Object System.Windows.Forms.Button
+    $chatButton.Text = "💬 CHAT"
+    $chatButton.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $chatButton.BackColor = $global:accentColor
+    $chatButton.ForeColor = [System.Drawing.Color]::White
+    $chatButton.FlatStyle = "Flat"
+    $chatButton.FlatAppearance.BorderColor = [System.Drawing.Color]::DeepSkyBlue
+    $chatButton.FlatAppearance.BorderSize = 2
+    $chatButton.AutoSize = $false
+    $chatButton.Size = New-Object System.Drawing.Size(110, 30)
+    $chatButton.Margin = New-Object System.Windows.Forms.Padding(4, 2, 4, 2)
+    $chatButton.Cursor = [System.Windows.Forms.Cursors]::Hand
+    $chatButton.Dock = [System.Windows.Forms.DockStyle]::Fill   # Riempe l'altezza della colonna
+
+    $chatButton.Add_Click({
+        # Caricamento lazy del modulo AICHAT al primo click (stessa logica del pulsante Utility)
+        if (-not (Get-Command Show-AIChatDialog -ErrorAction SilentlyContinue)) {
+            $aiChatPath = Join-Path $global:scriptRoot "Modules\AICHAT.ps1"
+            if (Test-Path $aiChatPath) { 
+                . $aiChatPath 
+                Log "[OK] AICHAT caricato al volo"
+            } else {
+                [System.Windows.Forms.MessageBox]::Show(
+                    "Modulo AICHAT.ps1 non trovato in:`n$aiChatPath",
+                    "Errore", "OK", "Error"
+                )
+                return
+            }
+        }
+        Show-AIChatDialog
+    })
+
+    $headerTable.Controls.Add($chatButton, 3, 0)  # Posizionato nella nuova colonna 3
 
     $headerPanel.Height = 40 + 2 * 22
     $script:form.Controls.Add($headerPanel)
