@@ -9,7 +9,7 @@ Se hai suggerimenti, segnalazioni di bug o vuoi contribuire allo sviluppo, apri 
 Lo script verifica automaticamente la presenza di nuove versioni direttamente da questo repository!
 
 > ⚠️ **Utilizzare a proprio rischio. Nessuna garanzia espressa o implicita.**  
-> Use at your own risk. No warranties expressed or implied.
+> ⚠️ **Use at your own risk. No warranties expressed or implied.** 
 
 [![PowerShell](https://img.shields.io/badge/PowerShell-7.x-blue?logo=powershell&style=flat-square)](https://github.com/PowerShell/PowerShell)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6?logo=windows&style=flat-square)](https://www.microsoft.com/windows)
