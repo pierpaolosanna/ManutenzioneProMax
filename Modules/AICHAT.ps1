@@ -47,7 +47,7 @@ function Show-AIChatDialog {
     # ---------- BARRA DI CONFIGURAZIONE (Riga 0) ----------
     $configPanel = New-Object System.Windows.Forms.Panel
     $configPanel.Dock = "Fill"
-    $configPanel.BackColor = [System.Drawing.Color]::FromArgb(40, 40, 45)
+    $configPanel.BackColor = [System.Drawing.Color]::FromArgb(35, 40, 70)
     $configPanel.Padding = New-Object System.Windows.Forms.Padding(10)
     $mainLayout.Controls.Add($configPanel, 0, 0)
 
@@ -170,18 +170,18 @@ function Show-AIChatDialog {
     $inputRow.Padding = New-Object System.Windows.Forms.Padding(10, 5, 10, 5)
     $mainLayout.Controls.Add($inputRow, 0, 2)
 
-    # Input textbox (100px altezza)
-    $inputBox = New-Object System.Windows.Forms.TextBox
-    $inputBox.Multiline = $true
-    $inputBox.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 55)
-    $inputBox.ForeColor = [System.Drawing.Color]::White
-    $inputBox.Font = New-Object System.Drawing.Font("Segoe UI", 10)
-    $inputBox.BorderStyle = "FixedSingle"
-    $inputBox.AcceptsReturn = $true
-    $inputBox.ScrollBars = "Vertical"
-    $inputBox.Dock = "Fill"
-    $inputBox.Height = 100 - 10  # lasciamo un po' di padding
-    $inputRow.Controls.Add($inputBox, 0, 0)
+	# Input textbox (100px altezza)
+	$inputBox = New-Object System.Windows.Forms.TextBox
+	$inputBox.Multiline = $true
+	$inputBox.BackColor = [System.Drawing.Color]::FromArgb(30, 40, 60)   # Sfondo blu scuro
+	$inputBox.ForeColor = [System.Drawing.Color]::White                 # Testo bianco
+	$inputBox.Font = New-Object System.Drawing.Font("Segoe UI", 10)
+	$inputBox.BorderStyle = "FixedSingle"
+	$inputBox.AcceptsReturn = $true
+	$inputBox.ScrollBars = "Vertical"
+	$inputBox.Dock = "Fill"
+	$inputBox.Height = 100 - 10
+	$inputRow.Controls.Add($inputBox, 0, 0)
 
     # Pulsanti allineati verticalmente
     $buttonPanel = New-Object System.Windows.Forms.FlowLayoutPanel
