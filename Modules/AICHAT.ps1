@@ -1,11 +1,12 @@
 # ============================
 # MODULO AICHAT - Finestra chat AI (Multi-Provider)
-# Fix Groq 413: prompt troncato / fuso nel messaggio user
+# Design responsive con input 100px e progress bar blu
 # ============================
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 function Show-AIChatDialog {
+    # ---------- VARIABILI ----------
     $script:ApiKey            = $null
     $script:CurrentPromptName = ""
     $script:CurrentProvider   = "llm7-free"
@@ -20,124 +21,177 @@ function Show-AIChatDialog {
         $script:PromptDir = Join-Path $PSScriptRoot "..\Docs\Buttons"
     }
 
-    $form                 = New-Object System.Windows.Forms.Form
-    $form.Text            = "Manutenzione PRO MAX - Assistente AI"
-    $form.Size            = New-Object System.Drawing.Size(980, 700)
-    $form.StartPosition   = "CenterScreen"
-    $form.FormBorderStyle = "FixedDialog"
-    $form.BackColor       = [System.Drawing.Color]::FromArgb(28, 28, 30)
-    $form.MaximizeBox     = $false
-    $form.Padding         = New-Object System.Windows.Forms.Padding(10)
+    # ---------- FORM ----------
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "Manutenzione PRO MAX - Assistente AI"
+    $form.Size = New-Object System.Drawing.Size(1200, 800)
+    $form.StartPosition = "CenterScreen"
+    $form.FormBorderStyle = "Sizable"
+    $form.MaximizeBox = $true
+    $form.WindowState = "Maximized"
+    $form.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 35)
+    $form.MinimumSize = New-Object System.Drawing.Size(800, 600)
 
-    $outputBox             = New-Object System.Windows.Forms.RichTextBox
-    $outputBox.Size        = New-Object System.Drawing.Size(950, 420)
-    $outputBox.Location    = New-Object System.Drawing.Point(15, 15)
-    $outputBox.BackColor   = [System.Drawing.Color]::FromArgb(38, 38, 42)
-    $outputBox.ForeColor   = [System.Drawing.Color]::White
-    $outputBox.Font        = New-Object System.Drawing.Font("Segoe UI", 10)
-    $outputBox.ReadOnly    = $true
-    $outputBox.BorderStyle = "FixedSingle"
-    $outputBox.ScrollBars  = "Vertical"
-    $form.Controls.Add($outputBox)
+    # ---------- LAYOUT PRINCIPALE ----------
+    $mainLayout = New-Object System.Windows.Forms.TableLayoutPanel
+    $mainLayout.Dock = "Fill"
+    $mainLayout.RowCount = 4
+    $mainLayout.ColumnCount = 1
+    $mainLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::AutoSize)))    # Config bar
+    $mainLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100))) # Chat area
+    $mainLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 100))) # Input area (100px)
+    $mainLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 30)))  # Progress + Status
+    $mainLayout.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 35)
+    $form.Controls.Add($mainLayout)
 
-    $panelControls = New-Object System.Windows.Forms.TableLayoutPanel
-    $panelControls.Location = New-Object System.Drawing.Point(15, 450)
-    $panelControls.Size     = New-Object System.Drawing.Size(950, 200)
-    $panelControls.RowCount = 4
-    $panelControls.ColumnCount = 2
-    $panelControls.BackColor = [System.Drawing.Color]::Transparent
-    $form.Controls.Add($panelControls)
+    # ---------- BARRA DI CONFIGURAZIONE (Riga 0) ----------
+    $configPanel = New-Object System.Windows.Forms.Panel
+    $configPanel.Dock = "Fill"
+    $configPanel.BackColor = [System.Drawing.Color]::FromArgb(40, 40, 45)
+    $configPanel.Padding = New-Object System.Windows.Forms.Padding(10)
+    $mainLayout.Controls.Add($configPanel, 0, 0)
 
-    $panelControls.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 30)))
-    $panelControls.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 50)))
-    $panelControls.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 50)))
+    # Usiamo un FlowLayoutPanel per disporre i controlli orizzontalmente con wrap
+    $configFlow = New-Object System.Windows.Forms.FlowLayoutPanel
+    $configFlow.Dock = "Fill"
+    $configFlow.FlowDirection = "LeftToRight"
+    $configFlow.WrapContents = $true
+    $configFlow.AutoSize = $true
+    $configFlow.BackColor = [System.Drawing.Color]::Transparent
+    $configPanel.Controls.Add($configFlow)
 
+    # Prompt
     $lblPrompt = New-Object System.Windows.Forms.Label
     $lblPrompt.Text = "Prompt:"
-    $lblPrompt.ForeColor = [System.Drawing.Color]::LightGray
+    $lblPrompt.ForeColor = [System.Drawing.Color]::FromArgb(200, 200, 210)
     $lblPrompt.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $lblPrompt.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $lblPrompt.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-    $panelControls.Controls.Add($lblPrompt, 0, 0)
+    $lblPrompt.AutoSize = $true
+    $lblPrompt.Margin = New-Object System.Windows.Forms.Padding(0, 6, 10, 0)
+    $configFlow.Controls.Add($lblPrompt)
 
     $comboPrompt = New-Object System.Windows.Forms.ComboBox
     $comboPrompt.DropDownStyle = "DropDownList"
-    $comboPrompt.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 50)
+    $comboPrompt.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 55)
     $comboPrompt.ForeColor = [System.Drawing.Color]::White
     $comboPrompt.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $comboPrompt.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $panelControls.Controls.Add($comboPrompt, 0, 0)
+    $comboPrompt.Width = 200
+    $comboPrompt.Margin = New-Object System.Windows.Forms.Padding(0, 3, 15, 0)
+    $configFlow.Controls.Add($comboPrompt)
 
+    # Provider
     $lblProvider = New-Object System.Windows.Forms.Label
     $lblProvider.Text = "Provider:"
-    $lblProvider.ForeColor = [System.Drawing.Color]::LightGray
+    $lblProvider.ForeColor = [System.Drawing.Color]::FromArgb(200, 200, 210)
     $lblProvider.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $lblProvider.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $lblProvider.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-    $panelControls.Controls.Add($lblProvider, 1, 0)
+    $lblProvider.AutoSize = $true
+    $lblProvider.Margin = New-Object System.Windows.Forms.Padding(0, 6, 10, 0)
+    $configFlow.Controls.Add($lblProvider)
 
     $comboProvider = New-Object System.Windows.Forms.ComboBox
     $comboProvider.DropDownStyle = "DropDownList"
-    $comboProvider.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 50)
+    $comboProvider.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 55)
     $comboProvider.ForeColor = [System.Drawing.Color]::White
     $comboProvider.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $comboProvider.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $comboProvider.Width = 150
+    $comboProvider.Margin = New-Object System.Windows.Forms.Padding(0, 3, 15, 0)
     $comboProvider.Items.AddRange(@("llm7 (free)", "llm7 (API)", "Gemini", "Groq", "HuggingFace", "Mistral", "OpenRouter"))
     $comboProvider.SelectedIndex = 0
-    $panelControls.Controls.Add($comboProvider, 1, 0)
+    $configFlow.Controls.Add($comboProvider)
 
-    $panelControls.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 30)))
+    # Link API Key
+    $linkApi = New-Object System.Windows.Forms.LinkLabel
+    $linkApi.AutoSize = $true
+    $linkApi.ForeColor = [System.Drawing.Color]::LightGray
+    $linkApi.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Italic)
+    $linkApi.Text = ""
+    $linkApi.LinkColor = [System.Drawing.Color]::FromArgb(100, 160, 255)
+    $linkApi.VisitedLinkColor = [System.Drawing.Color]::FromArgb(150, 150, 200)
+    $linkApi.ActiveLinkColor = [System.Drawing.Color]::FromArgb(200, 200, 255)
+    $linkApi.Margin = New-Object System.Windows.Forms.Padding(0, 6, 15, 0)
+    $configFlow.Controls.Add($linkApi)
 
+    # API Key
     $lblApi = New-Object System.Windows.Forms.Label
     $lblApi.Text = "API Key:"
-    $lblApi.ForeColor = [System.Drawing.Color]::LightGray
+    $lblApi.ForeColor = [System.Drawing.Color]::FromArgb(200, 200, 210)
     $lblApi.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $lblApi.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $lblApi.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
+    $lblApi.AutoSize = $true
+    $lblApi.Margin = New-Object System.Windows.Forms.Padding(0, 6, 10, 0)
     $lblApi.Visible = $false
-    $panelControls.Controls.Add($lblApi, 0, 1)
+    $configFlow.Controls.Add($lblApi)
 
     $txtApiKey = New-Object System.Windows.Forms.TextBox
-    $txtApiKey.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 50)
+    $txtApiKey.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 55)
     $txtApiKey.ForeColor = [System.Drawing.Color]::White
     $txtApiKey.Font = New-Object System.Drawing.Font("Segoe UI", 9)
     $txtApiKey.BorderStyle = "FixedSingle"
-    $txtApiKey.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $txtApiKey.Width = 250
+    $txtApiKey.Margin = New-Object System.Windows.Forms.Padding(0, 3, 10, 0)
     $txtApiKey.Visible = $false
-    $panelControls.Controls.Add($txtApiKey, 0, 1)
+    $configFlow.Controls.Add($txtApiKey)
 
     $btnSaveKey = New-Object System.Windows.Forms.Button
-    $btnSaveKey.Text = "Salva"
+    $btnSaveKey.Text = "Salva API Key"
     $btnSaveKey.BackColor = [System.Drawing.Color]::FromArgb(0, 140, 210)
     $btnSaveKey.ForeColor = [System.Drawing.Color]::White
     $btnSaveKey.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
     $btnSaveKey.FlatStyle = "Flat"
     $btnSaveKey.FlatAppearance.BorderSize = 0
-    $btnSaveKey.Dock = [System.Windows.Forms.DockStyle]::Fill
+    $btnSaveKey.AutoSize = $true
+    $btnSaveKey.Margin = New-Object System.Windows.Forms.Padding(0, 3, 0, 0)
     $btnSaveKey.Visible = $false
-    $panelControls.Controls.Add($btnSaveKey, 1, 1)
+    $configFlow.Controls.Add($btnSaveKey)
 
-    $panelControls.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 60)))
+    # ---------- AREA CHAT (Riga 1) ----------
+    $chatPanel = New-Object System.Windows.Forms.Panel
+    $chatPanel.Dock = "Fill"
+    $chatPanel.Padding = New-Object System.Windows.Forms.Padding(10)
+    $chatPanel.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 35)
+    $mainLayout.Controls.Add($chatPanel, 0, 1)
 
+    $outputBox = New-Object System.Windows.Forms.RichTextBox
+    $outputBox.Dock = "Fill"
+    $outputBox.BackColor = [System.Drawing.Color]::FromArgb(20, 20, 25)
+    $outputBox.ForeColor = [System.Drawing.Color]::FromArgb(230, 230, 235)
+    $outputBox.Font = New-Object System.Drawing.Font("Segoe UI", 10)
+    $outputBox.ReadOnly = $true
+    $outputBox.BorderStyle = "None"
+    $outputBox.ScrollBars = "Vertical"
+    $chatPanel.Controls.Add($outputBox)
+
+    # ---------- AREA INPUT + PULSANTI (Riga 2) ----------
+    $inputRow = New-Object System.Windows.Forms.TableLayoutPanel
+    $inputRow.Dock = "Fill"
+    $inputRow.ColumnCount = 2
+    $inputRow.RowCount = 1
+    $inputRow.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100))) # Input box
+    $inputRow.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize)))     # Buttons
+    $inputRow.BackColor = [System.Drawing.Color]::FromArgb(40, 40, 45)
+    $inputRow.Padding = New-Object System.Windows.Forms.Padding(10, 5, 10, 5)
+    $mainLayout.Controls.Add($inputRow, 0, 2)
+
+    # Input textbox (100px altezza)
     $inputBox = New-Object System.Windows.Forms.TextBox
     $inputBox.Multiline = $true
-    $inputBox.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 50)
+    $inputBox.BackColor = [System.Drawing.Color]::FromArgb(50, 50, 55)
     $inputBox.ForeColor = [System.Drawing.Color]::White
     $inputBox.Font = New-Object System.Drawing.Font("Segoe UI", 10)
     $inputBox.BorderStyle = "FixedSingle"
     $inputBox.AcceptsReturn = $true
     $inputBox.ScrollBars = "Vertical"
-    $inputBox.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $panelControls.Controls.Add($inputBox, 0, 2)
+    $inputBox.Dock = "Fill"
+    $inputBox.Height = 100 - 10  # lasciamo un po' di padding
+    $inputRow.Controls.Add($inputBox, 0, 0)
 
-    $panelButtons = New-Object System.Windows.Forms.TableLayoutPanel
-    $panelButtons.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $panelButtons.ColumnCount = 3
-    $panelButtons.RowCount = 1
-    $panelButtons.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 33.3)))
-    $panelButtons.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 33.3)))
-    $panelButtons.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 33.4)))
-    $panelControls.Controls.Add($panelButtons, 1, 2)
+    # Pulsanti allineati verticalmente
+    $buttonPanel = New-Object System.Windows.Forms.FlowLayoutPanel
+    $buttonPanel.Dock = "Fill"
+    $buttonPanel.FlowDirection = "TopDown"
+    $buttonPanel.WrapContents = $false
+    $buttonPanel.AutoSize = $true
+    $buttonPanel.BackColor = [System.Drawing.Color]::Transparent
+    $buttonPanel.Padding = New-Object System.Windows.Forms.Padding(5, 0, 0, 0)
+    $inputRow.Controls.Add($buttonPanel, 1, 0)
 
     $btnSend = New-Object System.Windows.Forms.Button
     $btnSend.Text = "Invia"
@@ -146,8 +200,9 @@ function Show-AIChatDialog {
     $btnSend.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
     $btnSend.FlatStyle = "Flat"
     $btnSend.FlatAppearance.BorderSize = 0
-    $btnSend.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $panelButtons.Controls.Add($btnSend, 0, 0)
+    $btnSend.AutoSize = $true
+    $btnSend.Margin = New-Object System.Windows.Forms.Padding(0, 0, 0, 5)
+    $buttonPanel.Controls.Add($btnSend)
 
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Annulla"
@@ -156,38 +211,50 @@ function Show-AIChatDialog {
     $btnCancel.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
     $btnCancel.FlatStyle = "Flat"
     $btnCancel.FlatAppearance.BorderSize = 0
+    $btnCancel.AutoSize = $true
+    $btnCancel.Margin = New-Object System.Windows.Forms.Padding(0, 0, 0, 5)
     $btnCancel.Enabled = $false
-    $btnCancel.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $panelButtons.Controls.Add($btnCancel, 1, 0)
+    $buttonPanel.Controls.Add($btnCancel)
 
     $btnClear = New-Object System.Windows.Forms.Button
-    $btnClear.Text = "Cancella"
+    $btnClear.Text = "Cancella Chat"
     $btnClear.BackColor = [System.Drawing.Color]::FromArgb(70, 70, 80)
     $btnClear.ForeColor = [System.Drawing.Color]::White
     $btnClear.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
     $btnClear.FlatStyle = "Flat"
     $btnClear.FlatAppearance.BorderSize = 0
-    $btnClear.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $panelButtons.Controls.Add($btnClear, 2, 0)
+    $btnClear.AutoSize = $true
+    $btnClear.Margin = New-Object System.Windows.Forms.Padding(0, 0, 0, 0)
+    $buttonPanel.Controls.Add($btnClear)
 
-    $panelControls.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 50)))
+    # ---------- PROGRESS + STATUS (Riga 3) ----------
+    $statusRow = New-Object System.Windows.Forms.TableLayoutPanel
+    $statusRow.Dock = "Fill"
+    $statusRow.ColumnCount = 2
+    $statusRow.RowCount = 1
+    $statusRow.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::AutoSize))) # Status label
+    $statusRow.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100))) # Progress bar
+    $statusRow.BackColor = [System.Drawing.Color]::FromArgb(40, 40, 45)
+    $statusRow.Padding = New-Object System.Windows.Forms.Padding(10, 2, 10, 2)
+    $mainLayout.Controls.Add($statusRow, 0, 3)
 
     $statusLabel = New-Object System.Windows.Forms.Label
     $statusLabel.Text = "Pronto"
     $statusLabel.ForeColor = [System.Drawing.Color]::LightGray
     $statusLabel.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Italic)
-    $statusLabel.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $statusLabel.TextAlign = [System.Drawing.ContentAlignment]::MiddleLeft
-    $panelControls.Controls.Add($statusLabel, 0, 3)
+    $statusLabel.AutoSize = $true
+    $statusLabel.Margin = New-Object System.Windows.Forms.Padding(0, 4, 15, 0)
+    $statusRow.Controls.Add($statusLabel, 0, 0)
 
     $progressBar = New-Object System.Windows.Forms.ProgressBar
+    $progressBar.Dock = "Fill"
     $progressBar.Style = "Marquee"
     $progressBar.Visible = $false
-    $progressBar.ForeColor = [System.Drawing.Color]::FromArgb(0, 140, 210)
-    $progressBar.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $panelControls.Controls.Add($progressBar, 1, 3)
+    $progressBar.ForeColor = [System.Drawing.Color]::FromArgb(0, 140, 210)  # Blu
+    $progressBar.Margin = New-Object System.Windows.Forms.Padding(0, 3, 0, 0)
+    $statusRow.Controls.Add($progressBar, 1, 0)
 
-    # ---------- API KEY ----------
+    # ---------- FUNZIONI ----------
     function Get-ProviderKeyFile {
         param([string]$Provider)
         switch ($Provider) {
@@ -198,6 +265,35 @@ function Show-AIChatDialog {
             "Mistral"     { return "api.mistral.txt" }
             "OpenRouter"  { return "api.openrouter.txt" }
             default       { return $null }
+        }
+    }
+
+    function Get-ProviderApiUrl {
+        param([string]$Provider)
+        switch ($Provider) {
+            "llm7 (free)"   { return $null }
+            "llm7 (API)"    { return "https://dash.llm7.io/" }
+            "Gemini"        { return "https://ai.google.dev/" }
+            "Groq"          { return "https://console.groq.com/" }
+            "HuggingFace"   { return "https://huggingface.co/settings/tokens" }
+            "Mistral"       { return "https://console.mistral.ai/api-keys/" }
+            "OpenRouter"    { return "https://openrouter.ai/keys" }
+            default         { return $null }
+        }
+    }
+
+    function Update-ApiLink {
+        $provider = [string]$comboProvider.SelectedItem
+        $url = Get-ProviderApiUrl -Provider $provider
+        if ($url) {
+            $linkApi.Text = "Crea API Key qui: $url"
+            $linkApi.Links.Clear()
+            $linkApi.Links.Add(18, $url.Length, $url)
+            $linkApi.Visible = $true
+        } else {
+            $linkApi.Text = "Nessuna API Key richiesta."
+            $linkApi.Links.Clear()
+            $linkApi.Visible = $true
         }
     }
 
@@ -228,6 +324,7 @@ function Show-AIChatDialog {
             $statusLabel.Text = ("Provider: {0}" -f $provider)
             $statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(166, 227, 161)
         }
+        Update-ApiLink
     }
 
     function Save-ApiKey {
@@ -257,7 +354,6 @@ function Show-AIChatDialog {
         }
     }
 
-    # ---------- TEST CONNESSIONE ----------
     function Test-ProviderConnection {
         param([string]$Provider, [string]$ApiKey)
         if ($script:IsBusy) { return }
@@ -326,9 +422,6 @@ function Show-AIChatDialog {
 
         $selectedModel = $null
         foreach ($m in $candidateModels) {
-            if ($Provider -eq "Groq" -and $m -eq "llama-3.1-8b-instant") {
-                # preferenza fissa, ma verifichiamo comunque
-            }
             $testBody = (@{
                 model = $m
                 messages = @(@{ role = "user"; content = "ping" })
@@ -356,7 +449,6 @@ function Show-AIChatDialog {
         }
     }
 
-    # ---------- PROMPT ----------
     function Load-PromptFile {
         param([string]$FileName)
         if ([string]::IsNullOrEmpty($FileName)) { return }
@@ -378,6 +470,7 @@ function Show-AIChatDialog {
         $statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(166, 227, 161)
     }
 
+    # ---------- POPOLAMENTO COMBOBOX ----------
     if (-not (Test-Path $script:PromptDir)) {
         [System.Windows.Forms.MessageBox]::Show("Cartella Docs\Buttons non trovata!", "Errore", "OK", "Error")
         return
@@ -396,7 +489,13 @@ function Show-AIChatDialog {
     function Add-ChatMessage {
         param([string]$Sender, [string]$Text)
         $timestamp = Get-Date -Format "HH:mm"
-        $prefix = if ($Sender -eq "User") { "Tu" } else { "Assistente" }
+        $providerName = [string]$comboProvider.SelectedItem
+        if ($Sender -eq "User") {
+            $prefix = "Tu"
+        } else {
+            $prefix = "Assistente $providerName"
+        }
+
         $outputBox.SelectionStart = $outputBox.TextLength
         $outputBox.SelectionLength = 0
         $outputBox.SelectionColor = [System.Drawing.Color]::Gray
@@ -505,6 +604,11 @@ function Show-AIChatDialog {
     $comboProvider.Add_SelectedIndexChanged({ Load-ApiKey })
     $btnSaveKey.Add_Click({ Save-ApiKey })
 
+    $linkApi.Add_LinkClicked({
+        $_.Link.Visited = $true
+        Start-Process $_.Link.LinkData
+    })
+
     $btnSend.Add_Click({
         $question = $inputBox.Text.Trim()
         if (-not $question) {
@@ -553,7 +657,7 @@ function Show-AIChatDialog {
                 $url = "https://api.groq.com/openai/v1/chat/completions"
                 $model = "llama-3.1-8b-instant"
                 $maxTokens = 512
-                $maxSysChars = 3500   # limite sicuro per evitare 413
+                $maxSysChars = 3500
                 if ([string]::IsNullOrEmpty($apiKey)) {
                     Set-BusyState $false
                     Add-ChatMessage -Sender "Assistant" -Text "Nessuna API Key per Groq."
@@ -593,7 +697,6 @@ function Show-AIChatDialog {
             }
         }
 
-        # Prepara system prompt (troncato se troppo lungo)
         $sysPrompt = if ($null -eq $script:SystemPrompt) { "" } else { [string]$script:SystemPrompt }
         $truncatedNote = ""
         if ($sysPrompt.Length -gt $maxSysChars) {
@@ -607,15 +710,11 @@ function Show-AIChatDialog {
             $messages = @()
 
             if ($Provider -eq "Groq") {
-                # Strategia anti-413 per Groq:
-                # 1) system corto se presente
-                # 2) istruzioni fuse nel messaggio user se system e' lungo
                 if (-not [string]::IsNullOrWhiteSpace($SysPrompt)) {
                     if ($SysPrompt.Length -le 1500) {
                         $messages += @{ role = "system"; content = $SysPrompt }
                         $messages += @{ role = "user"; content = $Q }
                     } else {
-                        # Fondi le istruzioni nel messaggio utente (funziona meglio su Groq)
                         $merged = "Istruzioni operative:`n{0}`n`n--- Domanda utente ---`n{1}" -f $SysPrompt, $Q
                         $messages += @{ role = "user"; content = $merged }
                     }
@@ -723,6 +822,7 @@ function Show-AIChatDialog {
         }
     })
 
+    # ---------- AVVIO ----------
     Load-PromptFile -FileName ([string]$comboPrompt.SelectedItem)
     Load-ApiKey
     Add-ChatMessage -Sender "Assistant" -Text ("Benvenuto! Provider: {0} - Prompt: '{1}'." -f $comboProvider.SelectedItem, $script:CurrentPromptName)
