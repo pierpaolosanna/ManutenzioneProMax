@@ -1,5 +1,5 @@
 # ============================================================
-# MANUTENZIONE PRO MAX v3.1.0 - ARCHITETTURA MODULARE
+# MANUTENZIONE PRO MAX v3.1.1 - ARCHITETTURA MODULARE
 # ============================================================
 # Auto-install PS7 + Rilancio (silenzioso)
 if ($PSVersionTable.PSVersion.Major -lt 7) {
@@ -277,7 +277,19 @@ function Build-GUI {
                 @{Text="⚡ Ottimizza Avvio"; Action={Do-BootOptimization}; Tooltip="Ottimizza servizi e avvio."}
                 @{Text="🔓 CPU Unlock"; Action={Do-UnlockCPU}; Tooltip="Sblocca opzioni avanzate energia CPU."}
                 @{Text="🖥️ TPM CPU RAM"; Action={Do-TpmCpuRamUnlock}; Tooltip="Rimuove limiti per Windows 11."}
-                @{Text="🔄 Riavvia PC"; Action={$r=[System.Windows.Forms.MessageBox]::Show("Riavviare?","Conferma","YesNo","Warning");if($r -eq "Yes"){shutdown /r /t 5 /c "Riavvio"}}; Tooltip="Riavvia il sistema."}
+                @{Text="🔧 Gestione Servizi"; Action={
+                    $smPath = Join-Path $scriptRoot "Modules\ServiceManager.ps1"
+                    if (Test-Path $smPath) {
+                        $exe = if ($global:isPwsh7) { "pwsh.exe" } else { "powershell.exe" }
+                        Start-Process $exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$smPath`"" -Verb RunAs
+                    } else {
+                        Log "[X] ServiceManager.ps1 non trovato in $smPath"
+                    }
+                }; Tooltip="Apre Gestione Servizi (richiede amministratore)."}
+                @{Text="🔄 Riavvia PC"; Action={
+                    $r = [System.Windows.Forms.MessageBox]::Show("Riavviare?", "Conferma", "YesNo", "Warning")
+                    if ($r -eq "Yes") { shutdown /r /t 5 /c "Riavvio" }
+                }; Tooltip="Riavvia il sistema."}
             )
         }
         "Dominio" = @{
