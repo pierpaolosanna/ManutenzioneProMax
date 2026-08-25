@@ -1,4 +1,4 @@
-# ⚡ Manutenzione PRO MAX v3.1.0
+# ⚡ Manutenzione PRO MAX v3.1.2
 
 ## 👨‍💻 Autore e Manutentore
 Questo progetto è creato e mantenuto da **Pierpaolo Sanna**.
