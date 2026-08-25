@@ -270,28 +270,37 @@ function Build-GUI {
                 @{Text="⚙️ Servizi"; Action={Do-ServiceStatus}; Tooltip="Stato dei servizi di sistema principali."}
             )
         }
-        "Sistema" = @{
-            Color = [System.Drawing.Color]::FromArgb(255, 220, 0)
-            Items = @(
-                @{Text="🎨 Ottimizza Visivi"; Action={Do-OptimizeVisual}; Tooltip="Ottimizza effetti visivi."}
-                @{Text="⚡ Ottimizza Avvio"; Action={Do-BootOptimization}; Tooltip="Ottimizza servizi e avvio."}
-                @{Text="🔓 CPU Unlock"; Action={Do-UnlockCPU}; Tooltip="Sblocca opzioni avanzate energia CPU."}
-                @{Text="🖥️ TPM CPU RAM"; Action={Do-TpmCpuRamUnlock}; Tooltip="Rimuove limiti per Windows 11."}
-                @{Text="🔧 Gestione Servizi"; Action={
-                    $smPath = Join-Path $scriptRoot "Modules\ServiceManager.ps1"
-                    if (Test-Path $smPath) {
-                        $exe = if ($global:isPwsh7) { "pwsh.exe" } else { "powershell.exe" }
-                        Start-Process $exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$smPath`"" -Verb RunAs
-                    } else {
-                        Log "[X] ServiceManager.ps1 non trovato in $smPath"
-                    }
-                }; Tooltip="Apre Gestione Servizi (richiede amministratore)."}
-                @{Text="🔄 Riavvia PC"; Action={
-                    $r = [System.Windows.Forms.MessageBox]::Show("Riavviare?", "Conferma", "YesNo", "Warning")
-                    if ($r -eq "Yes") { shutdown /r /t 5 /c "Riavvio" }
-                }; Tooltip="Riavvia il sistema."}
-            )
-        }
+		"Sistema" = @{
+			Color = [System.Drawing.Color]::FromArgb(255, 220, 0)
+			Items = @(
+				@{Text="🎨 Ottimizza Visivi"; Action={Do-OptimizeVisual}; Tooltip="Ottimizza effetti visivi."}
+				@{Text="⚡ Ottimizza Avvio"; Action={Do-BootOptimization}; Tooltip="Ottimizza servizi e avvio."}
+				@{Text="🔓 CPU Unlock"; Action={Do-UnlockCPU}; Tooltip="Sblocca opzioni avanzate energia CPU."}
+				@{Text="🖥️ TPM CPU RAM"; Action={Do-TpmCpuRamUnlock}; Tooltip="Rimuove limiti per Windows 11."}
+				@{Text="🔧 Gestione Servizi"; Action={
+					$smPath = Join-Path $scriptRoot "Modules\ServiceManager.ps1"
+					if (Test-Path $smPath) {
+						$exe = if ($global:isPwsh7) { "pwsh.exe" } else { "powershell.exe" }
+						Start-Process $exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$smPath`"" -Verb RunAs
+					} else {
+						Log "[X] ServiceManager.ps1 non trovato in $smPath"
+					}
+				}; Tooltip="Apre Gestione Servizi (richiede amministratore)."}
+				@{Text="🚀 Gestione Startup"; Action={
+					$suPath = Join-Path $scriptRoot "Modules\StartupManager.ps1"
+					if (Test-Path $suPath) {
+						$exe = if ($global:isPwsh7) { "pwsh.exe" } else { "powershell.exe" }
+						Start-Process $exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$suPath`"" -Verb RunAs
+					} else {
+						Log "[X] StartupManager.ps1 non trovato in $suPath"
+					}
+				}; Tooltip="Gestisce programmi di avvio automatico (Registry, UWP, Task, Servizi)."}
+				@{Text="🔄 Riavvia PC"; Action={
+					$r = [System.Windows.Forms.MessageBox]::Show("Riavviare?", "Conferma", "YesNo", "Warning")
+					if ($r -eq "Yes") { shutdown /r /t 5 /c "Riavvio" }
+				}; Tooltip="Riavvia il sistema."}
+			)
+		}
         "Dominio" = @{
             Color = [System.Drawing.Color]::FromArgb(100, 200, 255)
             Items = @(
