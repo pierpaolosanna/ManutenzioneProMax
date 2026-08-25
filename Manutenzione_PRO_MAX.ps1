@@ -1,5 +1,5 @@
 # ============================================================
-# MANUTENZIONE PRO MAX v3.1.1 - ARCHITETTURA MODULARE
+# MANUTENZIONE PRO MAX v3.1.2 - ARCHITETTURA MODULARE
 # ============================================================
 # Auto-install PS7 + Rilancio (silenzioso)
 if ($PSVersionTable.PSVersion.Major -lt 7) {
@@ -90,7 +90,7 @@ $logFile = Join-Path $tempDir "Manutenzione_PRO_MAX_$(Get-Date -Format 'yyyyMMdd
 $isPwsh7 = ($PSVersionTable.PSVersion.Major -ge 7)
 
 # ---- VARIABILI GLOBALI ----
-$global:currentVersion = "3.1.1"
+$global:currentVersion = "3.1.2"
 $global:repoOwner = "pierpaolosanna"
 $global:repoName = "ManutenzioneProMax"
 $global:scriptFileName = "Manutenzione_PRO_MAX.ps1"
