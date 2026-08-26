@@ -1,6 +1,6 @@
 # ============================================================
-# UPGRADE.psm1 - Gestion aggiornamenti
-# Versione: 1.1.0 - AGGIUNTO SOLO EDGE
+# UPGRADE.psm1 - Gestione aggiornamenti
+# Versione: 1.2.0 - AGGIUNTO SDI DRIVER
 # ============================================================
 
 function Test-WingetAvailable {
@@ -30,7 +30,6 @@ function Do-Winget {
     Flush-LogBuffer; Pump-UI
 }
 
-# ===== UNICA NOVITÀ: EDGE =====
 function Update-EdgeBrowser {
     if (Test-Cancel) { return }
     if (-not (Test-WingetAvailable)) { return }
@@ -42,7 +41,6 @@ function Update-EdgeBrowser {
     Update-Status "[...] Edge..." $fgColor
     Flush-LogBuffer; Pump-UI
     
-    # Versione attuale
     $verBefore = $null
     @("$env:ProgramFiles (x86)\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") | ForEach-Object {
         if (-not $verBefore -and (Test-Path $_)) { $verBefore = (Get-Item $_).VersionInfo.FileVersion }
@@ -59,10 +57,8 @@ function Update-EdgeBrowser {
         return
     }
     
-    # Aggiorna con Winget (silenzioso per evitare popup)
     winget upgrade "Microsoft.Edge" --silent --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
     
-    # Versione dopo
     $verAfter = $null
     @("$env:ProgramFiles (x86)\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe") | ForEach-Object {
         if (-not $verAfter -and (Test-Path $_)) { $verAfter = (Get-Item $_).VersionInfo.FileVersion }
@@ -79,7 +75,6 @@ function Update-EdgeBrowser {
     Update-Status "[OK] Edge" $successColor
     Flush-LogBuffer; Pump-UI
 }
-# ===== FINE NOVITÀ =====
 
 function Do-StoreUpdate {
     if (Test-Cancel) { return }
@@ -237,16 +232,12 @@ function Do-DriverUpdate {
     if (-not $global:isAdmin) {
         Log "[X] Richiesti privilegi admin per driver"
         Update-Status "[!] Admin richiesto" $warningColor
-        Flush-LogBuffer; Update-Progress 100
-        return
+        Flush-LogBuffer; Update-Progress 100; return
     }
     
     $wuDrivers = @()
     $wingetDrivers = @()
     
-    # ================================================================
-    # PARTE 1: RICERCA DRIVER VIA WINDOWS UPDATE
-    # ================================================================
     Log "[1/2] Ricerca driver via Windows Update..."
     Flush-LogBuffer; Pump-UI
     
@@ -258,17 +249,10 @@ function Do-DriverUpdate {
         
         if ($wuResult.Updates.Count -gt 0) {
             foreach ($d in $wuResult.Updates) {
-                $wuDrivers += [PSCustomObject]@{
-                    Source = "WU"
-                    Title = $d.Title
-                    Driver = $d
-                }
+                $wuDrivers += [PSCustomObject]@{ Source = "WU"; Title = $d.Title; Driver = $d }
             }
             Log "[OK] Windows Update: Trovati $($wuDrivers.Count) driver"
-            foreach ($d in $wuDrivers) {
-                Log "      → $($d.Title)"
-                Pump-UI
-            }
+            foreach ($d in $wuDrivers) { Log "      → $($d.Title)"; Pump-UI }
         } else {
             Log "[OK] Windows Update: Nessun driver disponibile"
         }
@@ -277,44 +261,22 @@ function Do-DriverUpdate {
     }
     
     Log ""
-    
-    # ================================================================
-    # PARTE 2: RICERCA DRIVER VIA WINGET
-    # ================================================================
     Log "[2/2] Ricerca driver via Winget..."
     Flush-LogBuffer; Pump-UI
     
     if (Test-WingetAvailable) {
         try {
             $tempFile = "$env:TEMP\winget_drivers_$([guid]::NewGuid().ToString('N')).txt"
-            $process = Start-Process -FilePath "winget" `
-                -ArgumentList "list --upgrade-available --accept-source-agreements" `
-                -NoNewWindow -Wait -PassThru `
-                -RedirectStandardOutput $tempFile `
-                -RedirectStandardError "$tempFile.err"
-            
+            $process = Start-Process -FilePath "winget" -ArgumentList "list --upgrade-available --accept-source-agreements" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $tempFile -RedirectStandardError "$tempFile.err"
             $output = Get-Content $tempFile -ErrorAction SilentlyContinue
             
-            # Filtra solo righe che sembrano driver
             foreach ($line in $output) {
                 if ($line -and $line.Trim() -and 
                     $line -match "driver|Driver|GPU|NVIDIA|nvidia|AMD|amd|Intel|intel|Realtek|realtek|Audio|audio|Wireless|wireless|Bluetooth|bluetooth|Wi-Fi|LAN|Chipset|chipset|Graphics|graphics|Display|display|Network|network" -and
-                    $line -notmatch "^---" -and
-                    $line -notmatch "^Nome" -and
-                    $line -notmatch "^Name" -and
-                    $line -notmatch "Nessun aggiornamento" -and
-                    $line -notmatch "non è stato trovato" -and
-                    $line -notmatch "include-unknown") {
-                    
-                    # Estrai ID dal Winget (di solito è la seconda colonna)
+                    $line -notmatch "^---" -and $line -notmatch "^Nome" -and $line -notmatch "^Name" -and $line -notmatch "Nessun aggiornamento" -and $line -notmatch "non è stato trovato" -and $line -notmatch "include-unknown") {
                     $parts = $line -split "\s{2,}"
                     $id = if ($parts.Count -ge 2) { $parts[1].Trim() } else { $null }
-                    
-                    $wingetDrivers += [PSCustomObject]@{
-                        Source = "Winget"
-                        Title = $line.Trim()
-                        Id = $id
-                    }
+                    $wingetDrivers += [PSCustomObject]@{ Source = "Winget"; Title = $line.Trim(); Id = $id }
                 }
             }
             
@@ -323,10 +285,7 @@ function Do-DriverUpdate {
             
             if ($wingetDrivers.Count -gt 0) {
                 Log "[OK] Winget: Trovati $($wingetDrivers.Count) driver"
-                foreach ($d in $wingetDrivers) {
-                    Log "      → $($d.Title)"
-                    Pump-UI
-                }
+                foreach ($d in $wingetDrivers) { Log "      → $($d.Title)"; Pump-UI }
             } else {
                 Log "[OK] Winget: Nessun driver disponibile"
             }
@@ -337,9 +296,6 @@ function Do-DriverUpdate {
         Log "[!] Winget: Non disponibile"
     }
     
-    # ================================================================
-    # PARTE 3: RIEPILOGO E SCELTA
-    # ================================================================
     Log ""
     Log "==============================================================================================="
     Log "[RIEPILOGO DRIVER]"
@@ -365,25 +321,7 @@ function Do-DriverUpdate {
         return
     }
     
-    # Menu scelta
-    $options = @()
-    if ($wuDrivers.Count -gt 0) { $options += "Windows Update ($($wuDrivers.Count) driver)" }
-    if ($wingetDrivers.Count -gt 0) { $options += "Winget ($($wingetDrivers.Count) driver)" }
-    if ($wuDrivers.Count -gt 0 -and $wingetDrivers.Count -gt 0) { $options += "ENTRAMBI ($totalDrivers driver)" }
-    $options += "Annulla"
-    
-    $optionsText = $options -join "`n"
-    $response = [System.Windows.Forms.MessageBox]::Show(
-        "Trovati $totalDrivers driver aggiornabili:`n`nWindows Update: $($wuDrivers.Count)`nWinget: $($wingetDrivers.Count)`n`nScegliere fonte:",
-        "Aggiornamento Driver",
-        [System.Windows.Forms.MessageBoxButtons]::YesNoCancel,
-        [System.Windows.Forms.MessageBoxIcon]::Question
-    )
-    
-    # Mappa risposta
-    # Yes = Prima opzione (WU se disponibile, altrimenti Winget)
-    # No = Seconda opzione (Winget se disponibile, altrimenti WU)
-    # Cancel = Annulla
+    $response = [System.Windows.Forms.MessageBox]::Show("Trovati $totalDrivers driver aggiornabili:`n`nWindows Update: $($wuDrivers.Count)`nWinget: $($wingetDrivers.Count)`n`nScegliere fonte:", "Aggiornamento Driver", "YesNoCancel", "Question")
     
     $installWU = $false
     $installWinget = $false
@@ -392,41 +330,21 @@ function Do-DriverUpdate {
         Log "[i] Operazione annullata dall'utente"
         Log "==============================================================================================="
         Log ""
-        Update-Progress 100
-        Update-Status "[OK] Driver" $successColor
-        Flush-LogBuffer; Pump-UI
+        Update-Progress 100; Update-Status "[OK] Driver" $successColor; Flush-LogBuffer; Pump-UI
         return
     }
     
     if ($wuDrivers.Count -gt 0 -and $wingetDrivers.Count -gt 0) {
-        # Entrambi disponibili
-        if ($response -eq "Yes") { 
-            $installWU = $true
-            $installWinget = $true
-            Log "[i] Scelta: ENTRAMBI"
-        } elseif ($response -eq "No") {
-            $installWinget = $true
-            Log "[i] Scelta: Solo Winget"
-        }
+        if ($response -eq "Yes") { $installWU = $true; $installWinget = $true; Log "[i] Scelta: ENTRAMBI" }
+        elseif ($response -eq "No") { $installWinget = $true; Log "[i] Scelta: Solo Winget" }
     } elseif ($wuDrivers.Count -gt 0) {
-        # Solo WU
-        if ($response -eq "Yes") {
-            $installWU = $true
-            Log "[i] Scelta: Windows Update"
-        }
+        if ($response -eq "Yes") { $installWU = $true; Log "[i] Scelta: Windows Update" }
     } elseif ($wingetDrivers.Count -gt 0) {
-        # Solo Winget
-        if ($response -eq "Yes") {
-            $installWinget = $true
-            Log "[i] Scelta: Winget"
-        }
+        if ($response -eq "Yes") { $installWinget = $true; Log "[i] Scelta: Winget" }
     }
     
     Log ""
     
-    # ================================================================
-    # PARTE 4: INSTALLAZIONE WINDOWS UPDATE
-    # ================================================================
     if ($installWU -and $wuDrivers.Count -gt 0) {
         Log "==============================================================================================="
         Log "[INSTALLAZIONE] Windows Update - $($wuDrivers.Count) driver"
@@ -436,7 +354,6 @@ function Do-DriverUpdate {
         try {
             Log "[DL] Download driver in corso..."
             Flush-LogBuffer; Pump-UI
-            
             $session = New-Object -ComObject Microsoft.Update.Session
             $downloader = $session.CreateUpdateDownloader()
             $downloader.Updates = $wuResult.Updates
@@ -446,79 +363,49 @@ function Do-DriverUpdate {
                 Log "[OK] Download completato"
                 Log "[PKG] Installazione in corso..."
                 Flush-LogBuffer; Pump-UI
-                
                 $installer = $session.CreateUpdateInstaller()
                 $installer.Updates = $wuResult.Updates
                 $installResult = $installer.Install()
                 
-                Log ""
-                Log "[RISULTATI WU]:"
+                Log ""; Log "[RISULTATI WU]:"
                 for ($i = 0; $i -lt $wuResult.Updates.Count; $i++) {
                     $res = $installResult.GetUpdateResult($i)
                     $status = if ($res.ResultCode -eq 2) { "[OK]" } else { "[X] Codice: $($res.ResultCode)" }
                     Log "   $status $($wuResult.Updates.Item($i).Title)"
                     Pump-UI
                 }
-                
-                if ($installResult.RebootRequired) {
-                    Log ""
-                    Log "[!] RIAVVIO NECESSARIO per attivare i driver WU"
-                }
+                if ($installResult.RebootRequired) { Log ""; Log "[!] RIAVVIO NECESSARIO per attivare i driver WU" }
             } else {
                 Log "[X] Errore download (codice: $($downloadResult.ResultCode))"
-                Log "[!] Il driver potrebbe non essere compatibile o richiedere approvazione manuale"
             }
         } catch {
             Log "[X] Errore installazione WU: $($_.Exception.Message)"
         }
-        
         Log ""
     }
     
-    # ================================================================
-    # PARTE 5: INSTALLAZIONE WINGET
-    # ================================================================
     if ($installWinget -and $wingetDrivers.Count -gt 0) {
         Log "==============================================================================================="
         Log "[INSTALLAZIONE] Winget - $($wingetDrivers.Count) driver"
         Log "==============================================================================================="
         Flush-LogBuffer; Pump-UI
         
-        # Installa ogni driver con ID valido
-        $installed = 0
-        $failed = 0
-        
+        $installed = 0; $failed = 0
         foreach ($d in $wingetDrivers) {
             if (Test-Cancel) { break }
-            
             if ($d.Id) {
                 Log "[i] Installazione: $($d.Id)"
                 Flush-LogBuffer; Pump-UI
-                
-                $output = winget upgrade $d.Id --accept-package-agreements --accept-source-agreements --silent 2>&1
-                
-                if ($LASTEXITCODE -eq 0) {
-                    Log "[OK] Installato: $($d.Id)"
-                    $installed++
-                } elseif ($LASTEXITCODE -eq -1978335189) {
-                    Log "[OK] Già aggiornato: $($d.Id)"
-                    $installed++
-                } else {
-                    Log "[!] Errore ($LASTEXITCODE): $($d.Id)"
-                    $failed++
-                }
+                winget upgrade $d.Id --accept-package-agreements --accept-source-agreements --silent 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) { Log "[OK] Installato: $($d.Id)"; $installed++ }
+                elseif ($LASTEXITCODE -eq -1978335189) { Log "[OK] Già aggiornato: $($d.Id)"; $installed++ }
+                else { Log "[!] Errore ($LASTEXITCODE): $($d.Id)"; $failed++ }
                 Pump-UI
             }
         }
-        
-        Log ""
-        Log "[RIEPILOGO WINGET]: Successo: $installed | Errori: $failed"
-        Log ""
+        Log ""; Log "[RIEPILOGO WINGET]: Successo: $installed | Errori: $failed"; Log ""
     }
     
-    # ================================================================
-    # PARTE 6: FINALE
-    # ================================================================
     Log "==============================================================================================="
     Log "[OK] Aggiornamento driver completato"
     Log "==============================================================================================="
@@ -528,6 +415,163 @@ function Do-DriverUpdate {
     Flush-LogBuffer; Pump-UI
 }
 
+# ===== SDI DRIVER - PORTATILE =====
+# ===== SDI DRIVER - COMPLETO FUNZIONANTE =====
+function Do-DriverSDI {
+    if (Test-Cancel) { return }
+
+    Log ""
+    Log "==============================================================================================="
+    Log "[>] SNAPPY DRIVER INSTALLER (Portatile)"
+    Log "==============================================================================================="
+    Update-Status "[...] SDI..." $accentColor
+    Flush-LogBuffer; Pump-UI
+
+    # Percorsi
+    $libDir   = Join-Path $global:scriptRoot "lib"
+    $sdiDir   = Join-Path $libDir "SDI"
+    $sdiZip   = Join-Path $libDir "SDI_1.26.1.7z"
+    $sevenZip = Join-Path $libDir "7za.exe"     # <-- 7za.exe locale
+
+    # URL corretto
+    $sdiUrl  = "https://download.instalki.org/programy/Windows/Narzedzia/zarzadzanie_sterownikami/SDI_1.26.1.7z"
+
+    Log "[i] Cartella lib: $libDir"
+    Log ""
+
+    # 1) Crea cartella lib
+    if (-not (Test-Path $libDir)) {
+        New-Item -ItemType Directory -Force -Path $libDir | Out-Null
+        Log "[i] Creata cartella lib"
+    }
+
+    # 2) Verifica presenza 7za.exe
+    if (-not (Test-Path $sevenZip)) {
+        Log "[X] ERRORE: 7za.exe non trovato in lib"
+        Log "[i] Percorso atteso: $sevenZip"
+        Update-Status "[X] 7za.exe mancante" $warningColor
+        Flush-LogBuffer; Pump-UI
+        return
+    }
+
+    # 3) DOWNLOAD SDI
+    if (-not (Test-Path $sdiZip)) {
+        Log "[i] Download SDI in: $sdiZip"
+        Flush-LogBuffer; Pump-UI
+
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            Invoke-WebRequest -Uri $sdiUrl -OutFile $sdiZip
+            Log "[OK] Download completato: $sdiZip"
+        }
+        catch {
+            Log "[X] Errore download: $($_.Exception.Message)"
+            Update-Status "[X] Errore download SDI" $warningColor
+            Flush-LogBuffer; Pump-UI
+            return
+        }
+    }
+    else {
+        Log "[i] File SDI già presente: $sdiZip"
+    }
+
+    # 4) CREA CARTELLA SDI
+    if (-not (Test-Path $sdiDir)) {
+        New-Item -ItemType Directory -Force -Path $sdiDir | Out-Null
+        Log "[i] Creata cartella SDI: $sdiDir"
+    }
+
+    # 5) ESTRAZIONE CON 7za.exe
+    Log "[i] Estrazione contenuto in: $sdiDir"
+    Flush-LogBuffer; Pump-UI
+
+    try {
+        # Sintassi corretta per 7za.exe (senza virgolette dopo -o)
+        & $sevenZip x $sdiZip "-o$sdiDir" -y 2>&1 | Out-Null
+        Log "[OK] Estrazione completata in: $sdiDir"
+    }
+    catch {
+        Log "[X] Errore estrazione: $($_.Exception.Message)"
+        Update-Status "[X] Errore estrazione SDI" $warningColor
+        Flush-LogBuffer; Pump-UI
+        return
+    }
+
+    # 6) RICERCA ESEGUIBILI SDI
+    Log "[i] Ricerca eseguibili SDI..."
+    Flush-LogBuffer; Pump-UI
+
+    $allExe = Get-ChildItem -Path $sdiDir -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue
+
+    # Preferisci 64 bit
+    $candidate64 = $allExe | Where-Object {
+        $_.Name -match "x64" -or $_.Name -match "64"
+    } | Select-Object -First 1
+
+    # Altrimenti 32 bit
+    $candidate32 = $allExe | Where-Object {
+        $_.Name -notmatch "x64" -and $_.Name -notmatch "64"
+    } | Select-Object -First 1
+
+    if ($candidate64) {
+        $sdiExe = $candidate64.FullName
+        Log "[OK] Eseguibile 64 bit trovato: $($candidate64.Name)"
+    }
+    elseif ($candidate32) {
+        $sdiExe = $candidate32.FullName
+        Log "[OK] Eseguibile 32 bit trovato: $($candidate32.Name)"
+    }
+    else {
+        Log "[X] Nessun eseguibile SDI trovato dopo l’estrazione."
+        Log "[i] Contenuto cartella SDI:"
+        Get-ChildItem -Path $sdiDir -Recurse | ForEach-Object {
+            Log " - $($_.FullName)"
+        }
+        Update-Status "[X] SDI non avviabile" $warningColor
+        Flush-LogBuffer; Pump-UI
+        return
+    }
+
+    # 7) AVVIO SDI
+    Log "[i] Avvio SDI..."
+    try {
+        Start-Process $sdiExe -Verb RunAs
+        Log "[OK] SDI avviato correttamente"
+    }
+    catch {
+        Log "[X] Errore avvio SDI: $($_.Exception.Message)"
+        Update-Status "[X] Errore avvio SDI" $warningColor
+        Flush-LogBuffer; Pump-UI
+        return
+    }
+
+    Log "[i] File in: $sdiDir"
+    Log "==============================================================================================="
+    Update-Progress 100
+    Update-Status "[OK] SDI" $successColor
+    Flush-LogBuffer; Pump-UI
+}
+
+
+
+
+
+function Remove-SDITemp {
+    Log "[i] Pulizia file SDI temporanei..."
+    $removed = 0
+    Get-ChildItem "$env:TEMP\SDI_*" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        Log "[OK] Rimosso: $($_.Name)"
+        $removed++
+    }
+    Remove-Item "$env:TEMP\sdi_*.7z" -Force -ErrorAction SilentlyContinue
+    
+    if ($removed -eq 0) {
+        Log "[OK] Nessun file SDI da pulire"
+    } else {
+        Log "[OK] Rimossi $removed cartelle SDI"
+    }
+}
 
 function Do-FullUpdate {
     param([switch]$Force)
@@ -632,7 +676,7 @@ function Do-RunAll {
     Flush-LogBuffer; Pump-UI
     Do-Winget
     if (Test-Cancel) { return }
-    Update-EdgeBrowser  # ← AGGIUNTO
+    Update-EdgeBrowser
     if (Test-Cancel) { return }
     Do-StoreUpdate
     if (Test-Cancel) { return }
@@ -652,12 +696,14 @@ function Do-RunAll {
 
 Export-ModuleMember -Function @(
     'Do-Winget',
-    'Update-EdgeBrowser',  # ← AGGIUNTO
+    'Update-EdgeBrowser',
     'Do-StoreUpdate',
     'Do-SearchWU',
     'Do-InstallWU',
     'Do-DriverUpdate',
+    'Do-DriverSDI',      # ← NUOVO
+    'Remove-SDITemp',    # ← NUOVO
     'Do-FullUpdate',
     'Do-RunAll',
-    'Test-WingetAvailable'  # ← AGGIUNTO
+    'Test-WingetAvailable'
 )
