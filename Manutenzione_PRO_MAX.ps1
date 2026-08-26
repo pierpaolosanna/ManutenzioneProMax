@@ -152,15 +152,16 @@ function Build-GUI {
         "Upgrade" = @{
             Color = [System.Drawing.Color]::FromArgb(0, 220, 255)
             Items = @(
-                @{Text="🔑 Eleva Admin"; Action={Restart-AsAdmin}; Tooltip="Riavvia lo script con privilegi amministrativi."}
-                @{Text="💾 Crea Ripristino"; Action={Do-RestorePoint}; Tooltip="Crea un punto di ripristino del sistema."}
-                @{Text="🔄 Winget"; Action={Do-Winget}; Tooltip="Aggiorna tutti i programmi con Winget."}
-                @{Text="📦 Store"; Action={Do-StoreUpdate}; Tooltip="Aggiorna le app del Microsoft Store."}
-                @{Text="🔍 Cerca WU"; Action={Do-SearchWU}; Tooltip="Cerca aggiornamenti Windows."}
-                @{Text="⬇️ Installa WU"; Action={Do-InstallWU}; Tooltip="Installa aggiornamenti Windows."}
-                @{Text="🔧 Driver"; Action={Do-DriverUpdate}; Tooltip="Aggiorna driver via Windows Update."}
-                @{Text="📦 Full Update Script"; Action={Do-FullUpdate -Force}; Tooltip="Aggiorna TUTTI i file del repository."}
-                @{Text="▶️ UPGRADE TOTAL"; Action={Do-RunAll}; Tooltip="Esegue la sequenza completa di aggiornamento."}
+                @{Text="🔑 Eleva Admin"; Action={Restart-AsAdmin}; Tooltip="Riavvia con privilegi amministrativi."},
+                @{Text="💾 Crea Ripristino"; Action={Do-RestorePoint}; Tooltip="Crea punto di ripristino."},
+                @{Text="🔄 Winget"; Action={Do-Winget}; Tooltip="Aggiorna programmi con Winget."},
+                @{Text="🌐 Edge"; Action={Update-EdgeBrowser}; Tooltip="Aggiorna specificamente Microsoft Edge."},
+                @{Text="📦 Store"; Action={Do-StoreUpdate}; Tooltip="Aggiorna app Microsoft Store."},
+                @{Text="🔍 Cerca WU"; Action={Do-SearchWU}; Tooltip="Cerca aggiornamenti Windows."},
+                @{Text="⬇️ Installa WU"; Action={Do-InstallWU}; Tooltip="Installa aggiornamenti Windows."},
+                @{Text="🔧 Driver"; Action={Do-DriverUpdate}; Tooltip="Aggiorna driver."},
+                @{Text="📦 Full Update Script"; Action={Do-FullUpdate -Force}; Tooltip="Aggiorna TUTTI i file del repo."},
+                @{Text="▶️ UPGRADE TOTAL"; Action={Do-RunAll}; Tooltip="Esegue sequenza completa aggiornamento."}
             )
         }
 		"Android" = @{
