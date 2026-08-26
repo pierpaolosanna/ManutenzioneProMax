@@ -214,10 +214,28 @@ function Build-GUI {
         "Pulizia" = @{
             Color = [System.Drawing.Color]::FromArgb(255, 180, 100)
             Items = @(
-                @{Text="🧹 Temp"; Action={Do-CleanTemp}; Tooltip="Pulisce le cartelle temporanee."}
-                @{Text="💾 Disk Cleanup"; Action={Do-DiskCleanup}; Tooltip="Avvia lo strumento di pulizia disco."}
-                @{Text="📝 Pulisci Log"; Action={Do-CleanLogs}; Tooltip="Pulisce file di log e dump."}
-                @{Text="📊 Analisi Disco"; Action={Do-DiskAnalysis}; Tooltip="Analisi dettagliata spazio disco."}
+                # === PULIZIE SINGOLE ===
+                @{Text="🧹 Temp"; Action={Do-CleanTemp}; Tooltip="Pulisce cartelle temporanee utente e sistema."}
+                @{Text="📝 Log e Report"; Action={Do-CleanLogs}; Tooltip="Pulisce file di log, CBS, DISM, WER."}
+                @{Text="🌐 Cache Browser"; Action={Do-CleanBrowserCache}; Tooltip="Pulisce cache Chrome, Edge, Firefox, Brave, Opera."}
+                @{Text="🗑️ Svuota Cestino"; Action={Do-EmptyRecycleBin}; Tooltip="Svuota il cestino di Windows."}
+                
+                # === SEPARATORE VISUALE (opzionale - usa una linea vuota) ===
+                
+                # === PULIZIE AVANZATE (richiedono Admin) ===
+                @{Text="📦 Windows Update"; Action={Do-CleanWindowsUpdate}; Tooltip="Pulisce cache download aggiornamenti Windows."}
+                @{Text="🔙 Windows.old"; Action={Do-CleanWindowsOld}; Tooltip="Rimuove vecchie versioni Windows (con conferma)."}
+                @{Text="💾 Disk Cleanup"; Action={Do-DiskCleanup}; Tooltip="Esegue pulizia disco Windows configurata."}
+                @{Text="💾 Cleanup + Sistema"; Action={Do-DiskCleanup -IncludeSystemFiles}; Tooltip="Disk Cleanup includendo file di sistema."}
+                
+                # === SEPARATORE ===
+                
+                # === UTILITÀ ===
+                @{Text="📊 Analisi Disco"; Action={Do-DiskAnalysis}; Tooltip="Analisi dettagliata spazio su disco."}
+                @{Text="🧪 Simulazione"; Action={Do-CleanAll -DryRun}; Tooltip="Simula pulizia senza cancellare nulla."}
+                
+                # === PULIZIA COMPLETA ===
+                @{Text="⚡ PULIZIA TOTALE"; Action={Do-CleanAll}; Tooltip="Esegue TUTTE le pulizie in sequenza."}
             )
         }
         "Rete" = @{
