@@ -563,14 +563,5 @@ text
 
 ---
 
-## 💾 **Come scaricare il file**
-
-### Metodo 1: Copia e incolla
-1. Seleziona tutto il testo qui sopra
-2. Crea un nuovo file chiamato `README.md` nel tuo repository
-3. Incolla il testo e salva
-
-### Metodo 2: Download diretto
-https://raw.githubusercontent.com/pierpaolosanna/ManutenzioneProMax/main/README.md
 
 
