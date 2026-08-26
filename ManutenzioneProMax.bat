@@ -129,7 +129,7 @@ echo Installazione in corso...
 %SystemRoot%\System32\msiexec.exe /i "%MSI_PATH%" /passive /norestart
 echo Attendere il completamento dell'installazione...
 
-timeout /t 3 /nobreak >nul
+timeout /t 2 /nobreak >nul
 del "%MSI_PATH%" 2>nul
 
 :DOPO_INSTALLA
@@ -273,7 +273,7 @@ echo Se accetti, verra' visualizzato il controllo UAC e lo script
 echo partira' in una nuova finestra elevata.
 echo Se lo rifiuti, lo script verra' eseguito con permessi limitati.
 echo.
-choice /C SN /T 5 /D S /M "Eseguire come amministratore [S/N] (default S in 5 secondi)"
+choice /C SN /T 2 /D S /M "Eseguire come amministratore [S/N] (default S in 2 secondi)"
 if errorlevel 2 goto :AVVIA_NORMALE
 if errorlevel 1 goto :AVVIA_ADMIN
 
@@ -282,9 +282,9 @@ echo.
 echo ============================================================
 echo Avvio dello script come amministratore...
 echo Verra' aperta una nuova finestra con privilegi elevati.
-echo Questa finestra si chiudera' tra 3 secondi.
+echo Questa finestra si chiudera' tra 2 secondi.
 echo ============================================================
-timeout /t 3 /nobreak >nul
+timeout /t 2 /nobreak >nul
 powershell -Command "Start-Process -FilePath '%PWSH%' -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File \"Manutenzione_PRO_MAX.ps1\"'"
 exit /b
 
