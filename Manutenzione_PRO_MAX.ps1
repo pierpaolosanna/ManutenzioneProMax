@@ -160,6 +160,7 @@ function Build-GUI {
                 @{Text="🔍 Cerca WU"; Action={Do-SearchWU}; Tooltip="Cerca aggiornamenti Windows."},
                 @{Text="⬇️ Installa WU"; Action={Do-InstallWU}; Tooltip="Installa aggiornamenti Windows."},
                 @{Text="🔧 Driver"; Action={Do-DriverUpdate}; Tooltip="Aggiorna driver."},
+				@{Text="📦 SDI Driver"; Action={Do-DriverSDI}; Tooltip="SDI portatile - banca dati enorme, zero installazione."},
                 @{Text="📦 Full Update Script"; Action={Do-FullUpdate -Force}; Tooltip="Aggiorna TUTTI i file del repo."},
                 @{Text="▶️ UPGRADE TOTAL"; Action={Do-RunAll}; Tooltip="Esegue sequenza completa aggiornamento."}
             )
