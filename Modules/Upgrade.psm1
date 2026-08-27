@@ -1200,143 +1200,280 @@ function Do-DriverUpdate {
 }
 
 # ===== SDI DRIVER - PORTATILE =====
-# ===== SDI DRIVER - COMPLETO FUNZIONANTE =====
 function Do-DriverSDI {
     if (Test-Cancel) { return }
 
     Log ""
     Log "==============================================================================================="
-    Log "[>] SNAPPY DRIVER INSTALLER (Portatile)"
+    Log "[>] SNAPPY DRIVER INSTALLER ORIGIN (via winget)"
     Log "==============================================================================================="
-    Update-Status "[...] SDI..." $accentColor
+    Update-Status "[...] SDIO via winget..." $accentColor
     Flush-LogBuffer; Pump-UI
 
-    # Percorsi
-    $libDir   = Join-Path $global:scriptRoot "lib"
-    $sdiDir   = Join-Path $libDir "SDI"
-    $sdiZip   = Join-Path $libDir "SDI_1.26.1.7z"
-    $sevenZip = Join-Path $libDir "7za.exe"     # <-- 7za.exe locale
-
-    # URL corretto
-    $sdiUrl  = "https://download.instalki.org/programy/Windows/Narzedzia/zarzadzanie_sterownikami/SDI_1.26.1.7z"
-
-    Log "[i] Cartella lib: $libDir"
-    Log ""
-
-    # 1) Crea cartella lib
-    if (-not (Test-Path $libDir)) {
-        New-Item -ItemType Directory -Force -Path $libDir | Out-Null
-        Log "[i] Creata cartella lib"
+    # ----- 1. Verifica winget -----
+    try {
+        $null = Get-Command winget -ErrorAction Stop
+        $wingetVersion = winget --version 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "Winget non disponibile" }
+        Log "[OK] winget trovato (v$($wingetVersion.Trim()))"
+    } catch {
+        Log "[X] winget non trovato. Impossibile installare SDIO."
+        Update-Status "[X] winget mancante" $warningColor
+        Flush-LogBuffer; Update-Progress 100; Pump-UI
+        return
     }
 
-    # 2) Verifica presenza 7za.exe
-    if (-not (Test-Path $sevenZip)) {
-        Log "[X] ERRORE: 7za.exe non trovato in lib"
-        Log "[i] Percorso atteso: $sevenZip"
-        Update-Status "[X] 7za.exe mancante" $warningColor
+    # ----- 2. Funzione helper per trovare sdio -----
+    function Find-SdioCommand {
+        $cmd = Get-Command "sdio" -ErrorAction SilentlyContinue
+        if ($cmd) { return $cmd.Source }
+        $where = where.exe sdio 2>$null
+        if ($LASTEXITCODE -eq 0 -and $where) {
+            return ($where -split "`r`n" | Select-Object -First 1).Trim()
+        }
+        return $null
+    }
+
+    # ----- 3. Cerca sdio (primo tentativo) -----
+    $sdioExe = Find-SdioCommand
+    if ($sdioExe) {
+        Log "[OK] 'sdio' già disponibile: $sdioExe"
+        
+        # Avvia SDIO direttamente
+        Log "[i] Avvio SDIO..."
+        try {
+            Start-Process "pwsh.exe" -ArgumentList "-NoExit -Command sdio" -Verb RunAs
+            Log "[OK] SDIO avviato in una nuova finestra PowerShell (amministratore)."
+        } catch {
+            try {
+                Start-Process "cmd.exe" -ArgumentList "/k sdio" -Verb RunAs
+                Log "[OK] SDIO avviato in una nuova finestra CMD (amministratore)."
+            } catch {
+                Log "[X] Errore avvio: $($_.Exception.Message)"
+            }
+        }
+        
+        Log "==============================================================================================="
+        Log "[OK] Snappy Driver Installer Origin avviato!"
+        Log "     Comando: sdio"
+        Log "==============================================================================================="
+        Update-Progress 100
+        Update-Status "[OK] SDIO" $successColor
         Flush-LogBuffer; Pump-UI
         return
     }
 
-    # 3) DOWNLOAD SDI
-    if (-not (Test-Path $sdiZip)) {
-        Log "[i] Download SDI in: $sdiZip"
-        Flush-LogBuffer; Pump-UI
+    # ----- 4. Installazione con winget (mostrando output in tempo reale) -----
+    Log "[i] 'sdio' non trovato, installazione tramite winget..."
+    Log "[i] Output di winget in tempo reale:"
+    Log "───────────────────────────────────────────────────────────────────────────────"
+    Flush-LogBuffer; Pump-UI
 
-        try {
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-            Invoke-WebRequest -Uri $sdiUrl -OutFile $sdiZip
-            Log "[OK] Download completato: $sdiZip"
+    # Usa Run-ProcessRealtime per mostrare l'output live
+    $installArgs = "install --id=GlennDelahoy.SnappyDriverInstallerOrigin -e --accept-package-agreements --accept-source-agreements"
+    
+    # Esegui il processo e cattura l'output in tempo reale
+    try {
+        $proc = Start-Process -FilePath "winget" -ArgumentList $installArgs -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\winget_sdio_out.txt" -RedirectStandardError "$env:TEMP\winget_sdio_err.txt"
+        
+        # Leggi l'output in tempo reale
+        $outputFile = "$env:TEMP\winget_sdio_out.txt"
+        $errorFile = "$env:TEMP\winget_sdio_err.txt"
+        
+        # Crea un timer per leggere l'output mentre il processo è in esecuzione
+        $lastSize = 0
+        while (-not $proc.HasExited) {
+            if (Test-Cancel) { 
+                $proc.Kill() 
+                Remove-Item $outputFile -Force -ErrorAction SilentlyContinue
+                Remove-Item $errorFile -Force -ErrorAction SilentlyContinue
+                return 
+            }
+            
+            # Leggi nuovi output
+            if (Test-Path $outputFile) {
+                $content = Get-Content $outputFile -ErrorAction SilentlyContinue
+                if ($content.Count -gt $lastSize) {
+                    for ($i = $lastSize; $i -lt $content.Count; $i++) {
+                        if ($content[$i] -and $content[$i].Trim()) {
+                            Log "   $($content[$i])"
+                            Pump-UI
+                        }
+                    }
+                    $lastSize = $content.Count
+                }
+            }
+            
+            # Leggi errori
+            if (Test-Path $errorFile) {
+                $errors = Get-Content $errorFile -ErrorAction SilentlyContinue | Where-Object { $_.Trim() -and $_ -notmatch "wmic" }
+                foreach ($err in $errors) {
+                    Log "   [!] $err"
+                    Pump-UI
+                }
+                Remove-Item $errorFile -Force -ErrorAction SilentlyContinue
+            }
+            
+            Start-Sleep -Milliseconds 200
+            Pump-UI
         }
-        catch {
-            Log "[X] Errore download: $($_.Exception.Message)"
-            Update-Status "[X] Errore download SDI" $warningColor
-            Flush-LogBuffer; Pump-UI
+        
+        # Leggi output rimanente dopo la chiusura
+        if (Test-Path $outputFile) {
+            $content = Get-Content $outputFile -ErrorAction SilentlyContinue
+            for ($i = $lastSize; $i -lt $content.Count; $i++) {
+                if ($content[$i] -and $content[$i].Trim()) {
+                    Log "   $($content[$i])"
+                    Pump-UI
+                }
+            }
+        }
+        
+        # Leggi errori finali
+        if (Test-Path $errorFile) {
+            $errors = Get-Content $errorFile -ErrorAction SilentlyContinue | Where-Object { $_.Trim() -and $_ -notmatch "wmic" }
+            foreach ($err in $errors) {
+                Log "   [!] $err"
+                Pump-UI
+            }
+        }
+        
+        # Pulisci file temporanei
+        Remove-Item $outputFile -Force -ErrorAction SilentlyContinue
+        Remove-Item $errorFile -Force -ErrorAction SilentlyContinue
+        
+        Log "───────────────────────────────────────────────────────────────────────────────"
+        
+        if ($proc.ExitCode -ne 0) {
+            Log "[X] winget install fallito (codice: $($proc.ExitCode))"
+            Update-Status "[X] Errore installazione" $exitColor
+            Flush-LogBuffer; Update-Progress 100; Pump-UI
             return
         }
-    }
-    else {
-        Log "[i] File SDI già presente: $sdiZip"
-    }
-
-    # 4) CREA CARTELLA SDI
-    if (-not (Test-Path $sdiDir)) {
-        New-Item -ItemType Directory -Force -Path $sdiDir | Out-Null
-        Log "[i] Creata cartella SDI: $sdiDir"
-    }
-
-    # 5) ESTRAZIONE CON 7za.exe
-    Log "[i] Estrazione contenuto in: $sdiDir"
-    Flush-LogBuffer; Pump-UI
-
-    try {
-        # Sintassi corretta per 7za.exe (senza virgolette dopo -o)
-        & $sevenZip x $sdiZip "-o$sdiDir" -y 2>&1 | Out-Null
-        Log "[OK] Estrazione completata in: $sdiDir"
-    }
-    catch {
-        Log "[X] Errore estrazione: $($_.Exception.Message)"
-        Update-Status "[X] Errore estrazione SDI" $warningColor
+        Log "[OK] Installazione winget completata con successo"
         Flush-LogBuffer; Pump-UI
+        
+    } catch {
+        Log "[X] Errore durante winget: $($_.Exception.Message)"
+        Update-Status "[X] Errore" $exitColor
+        Flush-LogBuffer; Update-Progress 100; Pump-UI
         return
     }
 
-    # 6) RICERCA ESEGUIBILI SDI
-    Log "[i] Ricerca eseguibili SDI..."
+    # ----- 5. RICARICA IL PATH E RIPROVA A CERCARE sdio -----
+    Log "[...] Ricarica variabili d'ambiente e ricerca sdio..."
     Flush-LogBuffer; Pump-UI
 
-    $allExe = Get-ChildItem -Path $sdiDir -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue
-
-    # Preferisci 64 bit
-    $candidate64 = $allExe | Where-Object {
-        $_.Name -match "x64" -or $_.Name -match "64"
-    } | Select-Object -First 1
-
-    # Altrimenti 32 bit
-    $candidate32 = $allExe | Where-Object {
-        $_.Name -notmatch "x64" -and $_.Name -notmatch "64"
-    } | Select-Object -First 1
-
-    if ($candidate64) {
-        $sdiExe = $candidate64.FullName
-        Log "[OK] Eseguibile 64 bit trovato: $($candidate64.Name)"
+    # Ricarica manualmente il PATH dal registro
+    try {
+        $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        $combined = if ($machinePath -and $userPath) { "$machinePath;$userPath" } elseif ($machinePath) { $machinePath } else { $userPath }
+        $env:Path = $combined
+        Log "[OK] PATH ricaricato dal registro"
+    } catch {
+        Log "[!] Impossibile ricaricare il PATH: $($_.Exception.Message)"
     }
-    elseif ($candidate32) {
-        $sdiExe = $candidate32.FullName
-        Log "[OK] Eseguibile 32 bit trovato: $($candidate32.Name)"
+
+    # Attendere un attimo per i link di winget
+    Start-Sleep -Milliseconds 500
+
+    # Riprova a cercare sdio
+    $sdioExe = Find-SdioCommand
+    if (-not $sdioExe) {
+        Log "[X] Impossibile trovare 'sdio' dopo il refresh."
+        Update-Status "[X] sdio non trovato" $warningColor
+        Flush-LogBuffer; Update-Progress 100; Pump-UI
+        return
     }
-    else {
-        Log "[X] Nessun eseguibile SDI trovato dopo l’estrazione."
-        Log "[i] Contenuto cartella SDI:"
-        Get-ChildItem -Path $sdiDir -Recurse | ForEach-Object {
-            Log " - $($_.FullName)"
+    Log "[OK] 'sdio' ora disponibile: $sdioExe"
+
+    # Verifica che il file esista
+    if (-not (Test-Path $sdioExe)) {
+        Log "[X] Percorso di 'sdio' non valido: $sdioExe"
+        Update-Status "[X] Errore percorso" $exitColor
+        Flush-LogBuffer; Update-Progress 100; Pump-UI
+        return
+    }
+
+    # ----- 6. Copia i file nella cartella lib/SDI -----
+    $libDir   = Join-Path $global:scriptRoot "lib"
+    $sdiDir   = Join-Path $libDir "SDI"
+
+    Log "[...] Copia file in $sdiDir..."
+    Flush-LogBuffer; Pump-UI
+    try {
+        if (-not (Test-Path $sdiDir)) {
+            New-Item -ItemType Directory -Force -Path $sdiDir | Out-Null
+            Log "[OK] Creata cartella: $sdiDir"
         }
-        Update-Status "[X] SDI non avviabile" $warningColor
-        Flush-LogBuffer; Pump-UI
-        return
+        $sourceDir = Split-Path $sdioExe -Parent
+        Copy-Item -Path "$sourceDir\*" -Destination $sdiDir -Recurse -Force -ErrorAction Stop
+        Log "[OK] File copiati in $sdiDir"
+    } catch {
+        Log "[!] Errore copia file: $($_.Exception.Message)"
     }
 
-    # 7) AVVIO SDI
-    Log "[i] Avvio SDI..."
+    # ----- 7. Assicura che la cartella sia nel PATH -----
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if ($userPath -notlike "*$sdiDir*") {
+        try {
+            $newPath = if ($userPath) { "$userPath;$sdiDir" } else { $sdiDir }
+            [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+            Log "[OK] Aggiunto $sdiDir al PATH dell'utente."
+        } catch {
+            Log "[!] Impossibile aggiornare il PATH: $($_.Exception.Message)"
+        }
+    } else {
+        Log "[OK] $sdiDir già nel PATH."
+    }
+    # Aggiorna il PATH della sessione corrente
+    $env:Path += ";$sdiDir"
+
+    # Crea alias per PowerShell
     try {
-        Start-Process $sdiExe -Verb RunAs
-        Log "[OK] SDI avviato correttamente"
-    }
-    catch {
-        Log "[X] Errore avvio SDI: $($_.Exception.Message)"
-        Update-Status "[X] Errore avvio SDI" $warningColor
-        Flush-LogBuffer; Pump-UI
-        return
+        Set-Alias -Name sdio -Value $sdioExe -Scope Global -Force -ErrorAction Stop
+        Log "[OK] Alias 'sdio' disponibile in questa sessione."
+    } catch {
+        Log "[!] Impossibile creare alias: $($_.Exception.Message)"
     }
 
-    Log "[i] File in: $sdiDir"
+    # Crea sdio.bat per comodità
+    $batPath = Join-Path $sdiDir "sdio.bat"
+    if (-not (Test-Path $batPath)) {
+        try {
+            "@echo off`n`"$sdioExe`" %*" | Out-File -FilePath $batPath -Encoding ASCII -Force
+            Log "[OK] Creato script 'sdio.bat' in $sdiDir"
+        } catch {
+            Log "[!] Impossibile creare sdio.bat: $($_.Exception.Message)"
+        }
+    }
+
+    # ----- 8. Avvia SDIO in una nuova finestra -----
+    Log "[i] Avvio SDIO..."
+    try {
+        Start-Process "pwsh.exe" -ArgumentList "-NoExit -Command sdio" -Verb RunAs
+        Log "[OK] SDIO avviato in una nuova finestra PowerShell (amministratore)."
+    } catch {
+        try {
+            Start-Process "cmd.exe" -ArgumentList "/k sdio" -Verb RunAs
+            Log "[OK] SDIO avviato in una nuova finestra CMD (amministratore)."
+        } catch {
+            Log "[X] Errore avvio: $($_.Exception.Message)"
+        }
+    }
+
+    Log ""
     Log "==============================================================================================="
+    Log "[OK] Snappy Driver Installer Origin pronto!"
+    Log "     Comando: sdio"
+    Log "==============================================================================================="
+    Log ""
+
     Update-Progress 100
-    Update-Status "[OK] SDI" $successColor
+    Update-Status "[OK] SDIO" $successColor
     Flush-LogBuffer; Pump-UI
 }
-
-
 
 
 
