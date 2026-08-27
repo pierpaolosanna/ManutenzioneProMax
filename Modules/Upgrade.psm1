@@ -30,6 +30,790 @@ function Do-Winget {
     Flush-LogBuffer; Pump-UI
 }
 
+
+function Do-RepairWinget {
+    <#
+    .SYNOPSIS
+    Ripristina le origini di winget e risolve gli errori comuni (cache corrotta, 404, ecc.)
+    #>
+    [CmdletBinding()]
+    param()
+    
+    if ($script:isClosing -or (Test-Cancel)) { return }
+    
+    Log ""
+    Log "==============================================================================================="
+    Log "[>] RIPRISTINO WINGET"
+    Log "==============================================================================================="
+    Update-Progress 10
+    Update-Status "[...] Ripristino winget..." $maintColor
+    Flush-LogBuffer; Pump-UI
+    
+    # Timeout per i comandi winget (120 secondi)
+    $wingetTimeout = 120000  # millisecondi
+    
+    # 1. Verifica che winget sia disponibile
+    try {
+        Log "[...] Verifica winget..."
+        Flush-LogBuffer; Pump-UI
+        
+        $proc = Start-Process -FilePath "winget" -ArgumentList "--version" -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\winget_ver.txt" -RedirectStandardError "$env:TEMP\winget_ver.err"
+        $proc.WaitForExit($wingetTimeout)
+        
+        if ($proc.ExitCode -ne 0) {
+            $errContent = Get-Content "$env:TEMP\winget_ver.err" -ErrorAction SilentlyContinue -Raw
+            Log "[X] winget non risponde (timeout dopo $([Math]::Round($wingetTimeout/1000))s)"
+            if ($errContent) { Log "[X] Errore: $errContent" }
+            Remove-Item "$env:TEMP\winget_ver*" -Force -ErrorAction SilentlyContinue
+            Update-Status "[!] winget non risponde" $warningColor
+            Flush-LogBuffer; Update-Progress 100; Pump-UI
+            return
+        }
+        
+        $ver = (Get-Content "$env:TEMP\winget_ver.txt" -ErrorAction SilentlyContinue).Trim()
+        Remove-Item "$env:TEMP\winget_ver*" -Force -ErrorAction SilentlyContinue
+        Log "[OK] winget trovato (v$ver)"
+    } catch {
+        Log "[X] Errore verifica: $($_.Exception.Message)"
+        Update-Status "[X] Errore" $exitColor
+        Flush-LogBuffer; Update-Progress 100; Pump-UI
+        return
+    }
+    
+    # 2. Pulisci la cache di winget
+    Log "[...] Pulizia cache..."
+    Flush-LogBuffer; Pump-UI
+    
+    try {
+        $cachePaths = @(
+            "$env:LOCALAPPDATA\Packages\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\LocalCache",
+            "$env:LOCALAPPDATA\Packages\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\LocalState\DiagOutputDir",
+            "$env:LOCALAPPDATA\Packages\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\TempState"
+        )
+        
+        $cleaned = 0
+        foreach ($path in $cachePaths) {
+            if (Test-Path $path) {
+                $items = Get-ChildItem -Path $path -Force -ErrorAction SilentlyContinue
+                if ($items.Count -gt 0) {
+                    Remove-Item -Path "$path\*" -Recurse -Force -ErrorAction SilentlyContinue
+                    $cleaned += $items.Count
+                }
+            }
+        }
+        
+        if ($cleaned -gt 0) {
+            Log "[OK] Cache pulita ($cleaned file)"
+        } else {
+            Log "[OK] Cache già pulita"
+        }
+    } catch {
+        Log "[!] Pulizia cache: $($_.Exception.Message)"
+    }
+    
+    # 3. Imposta lingua italiana (per l'output)
+    $originalCulture = [System.Threading.Thread]::CurrentThread.CurrentCulture
+    try {
+        $itCulture = [System.Globalization.CultureInfo]::GetCultureInfo("it-IT")
+        [System.Threading.Thread]::CurrentThread.CurrentCulture = $itCulture
+    } catch { }
+    
+    # 4. Resetta le origini
+    Log "[...] Reset origini..."
+    Flush-LogBuffer; Pump-UI
+    
+    $resetCommands = @(
+        @{ Cmd = "source reset --name winget"; Name = "winget" },
+        @{ Cmd = "source reset --name msstore"; Name = "msstore" },
+        @{ Cmd = "source reset --force"; Name = "tutte" }
+    )
+    
+    foreach ($item in $resetCommands) {
+        if (Test-Cancel) { break }
+        
+        try {
+            Log "[...] $($item.Name)..."
+            Flush-LogBuffer; Pump-UI
+            
+            $proc = Start-Process -FilePath "winget" -ArgumentList $item.Cmd -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\winget_out.txt" -RedirectStandardError "$env:TEMP\winget_err.txt"
+            
+            # Attendi con timeout
+            if (-not $proc.WaitForExit($wingetTimeout)) {
+                Log "[!] Timeout reset $($item.Name) ($([Math]::Round($wingetTimeout/1000))s)"
+                $proc.Kill()
+                continue
+            }
+            
+            $output = Get-Content "$env:Temp\winget_out.txt" -ErrorAction SilentlyContinue | Where-Object { $_.Trim() }
+            $errors = Get-Content "$env:TEMP\winget_err.txt" -ErrorAction SilentlyContinue | Where-Object { $_.Trim() }
+            
+            if ($proc.ExitCode -eq 0 -and -not $errors) {
+                Log "[OK] $($item.Name): Reset completato"
+            } else {
+                Log "[!] $($item.Name): Codice $($proc.ExitCode)"
+                if ($errors) {
+                    $errors | Select-Object -First 3 | ForEach-Object { Log "    $_" }
+                }
+            }
+            
+            Remove-Item "$env:TEMP\winget_*.txt" -Force -ErrorAction SilentlyContinue
+        } catch {
+            Log "[!] Errore reset: $($_.Exception.Message)"
+        }
+        
+        Pump-UI
+    }
+    
+    # 5. Aggiorna le origini
+    Log "[...] Aggiornamento origini..."
+    Flush-LogBuffer; Pump-UI
+    
+    try {
+        $proc = Start-Process -FilePath "winget" -ArgumentList "source update" -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\winget_out.txt" -RedirectStandardError "$env:TEMP\winget_err.txt"
+        
+        if (-not $proc.WaitForExit($wingetTimeout)) {
+            Log "[!] Timeout aggiornamento ($([Math]::Round($wingetTimeout/1000))s)"
+            $proc.Kill()
+        }
+        
+        $output = Get-Content "$env:TEMP\winget_out.txt" -ErrorAction SilentlyContinue | Where-Object { $_.Trim() }
+        foreach ($line in $output) {
+            Log "   $line"
+            Pump-UI
+        }
+        
+        $errors = Get-Content "$env:TEMP\winget_err.txt" -ErrorAction SilentlyContinue | Where-Object { $_.Trim() }
+        if ($errors) {
+            Log "[!] Errori:"
+            $errors | Select-Object -First 3 | ForEach-Object { Log "    $_" }
+        }
+        
+        if ($proc.ExitCode -eq 0) {
+            Log "[OK] Origini aggiornate"
+        } else {
+            Log "[!] Completato con codice: $($proc.ExitCode)"
+        }
+        
+        Remove-Item "$env:TEMP\winget_*.txt" -Force -ErrorAction SilentlyContinue
+    } catch {
+        Log "[!] Errore aggiornamento: $($_.Exception.Message)"
+    }
+    
+    # 6. Mostra stato finale
+    Log ""
+    Log "[...] Stato finale..."
+    Flush-LogBuffer; Pump-UI
+    
+    try {
+        $proc = Start-Process -FilePath "winget" -ArgumentList "source list" -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\winget_out.txt"
+        $proc.WaitForExit($wingetTimeout)
+        
+        $output = Get-Content "$env:TEMP\winget_out.txt" -ErrorAction SilentlyContinue | Where-Object { $_.Trim() }
+        
+        if ($output.Count -gt 0) {
+            Log "   Origini configurate:"
+            foreach ($line in $output) {
+                Log "   $line"
+            }
+        } else {
+            Log "   [i] Nessuna origine configurata"
+        }
+        
+        Remove-Item "$env:TEMP\winget_out.txt" -Force -ErrorAction SilentlyContinue
+    } catch {
+        Log "[!] Impossibile elencare origini: $($_.Exception.Message)"
+    }
+    
+    # Ripristina cultura originale
+    try {
+        [System.Threading.Thread]::CurrentThread.CurrentCulture = $originalCulture
+    } catch { }
+    
+    Log ""
+    Log "==============================================================================================="
+    Log "[OK] Ripristino winget completato"
+    Log "==============================================================================================="
+    Log ""
+    
+    Update-Progress 100
+    Update-Status "[OK] Winget ripristinato" $successColor
+    Flush-LogBuffer; Pump-UI
+}
+
+
+
+function Do-InstallChocolatey {
+    <#
+    .SYNOPSIS
+    Verifica/installa Chocolatey automaticamente tramite PowerShell, senza aprire browser.
+    #>
+    [CmdletBinding()]
+    param(
+        [switch]$ForceUpdate
+    )
+    
+    if ($script:isClosing -or (Test-Cancel)) { return }
+    
+    Log ""
+    Log "==============================================================================================="
+    Log "[>] CHOCOLATEY - Gestore Pacchetti Alternativo"
+    Log "==============================================================================================="
+    Update-Progress 10
+    Update-Status "[...] Chocolatey..." $maintColor
+    Flush-LogBuffer; Pump-UI
+    
+    # 1. Cerca Chocolatey (Nessun ForEach-Object, nessun break)
+    $chocoExe = $null
+    $chocoPaths = @(
+        "$env:ProgramData\chocolatey\bin\choco.exe",
+        "$env:ProgramData\chocolatey\choco.exe"
+    )
+    foreach ($path in $chocoPaths) {
+        if (-not $chocoExe -and (Test-Path $path -ErrorAction SilentlyContinue)) {
+            $chocoExe = $path
+        }
+    }
+    
+    # ================== INSTALLAZIONE AUTOMATICA ==================
+    if (-not $chocoExe) {
+        Log "[i] Chocolatey non installato. Avvio dell'installazione automatica..."
+        Log "[i] Questo potrebbe richiedere alcuni minuti..."
+        Flush-LogBuffer; Pump-UI
+        
+        try {
+            # Imposta lingua italiana
+            $originalCulture = [System.Threading.Thread]::CurrentThread.CurrentCulture
+            try {
+                $itCulture = [System.Globalization.CultureInfo]::GetCultureInfo("it-IT")
+                [System.Threading.Thread]::CurrentThread.CurrentCulture = $itCulture
+            } catch { }
+            
+            # Comando di installazione ufficiale
+            $installScript = "Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))"
+            
+            # Determina quale PowerShell usare
+            $psExe = if ($PSVersionTable.PSEdition -eq 'Core') { "pwsh.exe" } else { "powershell.exe" }
+            
+            Log "[...] Esecuzione script di installazione (richiede privilegi admin)..."
+            Flush-LogBuffer; Pump-UI
+            
+            # Avvia il processo in modo sicuro
+            try {
+                $proc = Start-Process -FilePath $psExe -ArgumentList "-NoProfile -Command `"$installScript`"" -Wait -PassThru -NoNewWindow -ErrorAction Stop
+            } catch {
+                Log "[X] Errore nell'avvio del processo di installazione: $($_.Exception.Message)"
+                try { [System.Threading.Thread]::CurrentThread.CurrentCulture = $originalCulture } catch { }
+                Update-Status "[X] Errore installazione" $exitColor
+                Flush-LogBuffer; Update-Progress 100; Pump-UI
+                return
+            }
+            
+            # Verifica esito
+            if ($proc.ExitCode -eq 0) {
+                # Cerca l'eseguibile nuovamente (senza break)
+                $newPaths = @("$env:ProgramData\chocolatey\bin\choco.exe", "$env:ProgramData\chocolatey\choco.exe")
+                foreach ($path in $newPaths) {
+                    if (Test-Path $path -ErrorAction SilentlyContinue) {
+                        $chocoExe = $path
+                    }
+                }
+                
+                if ($chocoExe) {
+                    Log "[OK] Chocolatey installato con successo"
+                } else {
+                    Log "[!] Installazione completata ma eseguibile non trovato (verifica manuale necessaria)"
+                }
+            } else {
+                Log "[X] Installazione fallita (codice: $($proc.ExitCode))"
+            }
+            
+            # Ripristina lingua
+            try { [System.Threading.Thread]::CurrentThread.CurrentCulture = $originalCulture } catch { }
+            
+        } catch {
+            Log "[X] Errore installazione: $($_.Exception.Message)"
+            try { [System.Threading.Thread]::CurrentThread.CurrentCulture = $originalCulture } catch { }
+            Update-Status "[X] Errore installazione" $exitColor
+            Flush-LogBuffer; Update-Progress 100; Pump-UI
+            return
+        }
+    } else {
+        Log "[OK] Chocolatey trovato: $chocoExe"
+    }
+    # ================== FINE INSTALLAZIONE ==================
+    
+    # 2. Ottieni versione
+    $version = "N/D"
+    if ($chocoExe) {
+        try {
+            $proc = Start-Process -FilePath $chocoExe -ArgumentList "--version" -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\choco_ver.txt" -RedirectStandardError "$env:TEMP\choco_err.txt"
+            if ($proc.WaitForExit(30000)) {
+                $version = (Get-Content "$env:TEMP\choco_ver.txt" -ErrorAction SilentlyContinue).Trim()
+            }
+            Remove-Item "$env:TEMP\choco_*.txt" -Force -ErrorAction SilentlyContinue
+        } catch { }
+        Log "[OK] Trovato in: $($chocoExe)"
+        if ($version -ne "N/D") { Log "[OK] Versione: $version" }
+    }
+    Log ""
+    
+    # 3. Configurazione base
+    Log "[...] Configurazione..."
+    Flush-LogBuffer; Pump-UI
+    
+    try {
+        $configDir = "$env:ProgramData\chocolatey\config"
+        if (-not (Test-Path $configDir)) {
+            New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+        }
+        
+        $configPath = "$configDir\chocolatey.config"
+        if (-not (Test-Path $configPath)) {
+            @"
+<?xml version="1.0" encoding="utf-8"?>
+<chocolatey xmlns="http://schemas.datacontract.org/2004/07/chocolatey">
+  <config>
+    <proxy />
+    <timeout>300</timeout>
+    <shutdown_timeout>30</shutdown_timeout>
+  </config>
+"@ | Out-File -FilePath $configPath -Encoding UTF8 -Force
+            Log "[OK] Configurazione base creata"
+        } else {
+            Log "[OK] Configurazione già presente"
+        }
+    } catch {
+        Log "[!] Impossibile creare configurazione: $($_.Exception.Message)"
+    }
+    
+    # 4. Aggiorna se richiesto
+    if ($ForceUpdate -and $chocoExe) {
+        Log "[...] Aggiornamento Chocolatey (potrebbe richiedere parecchi minuti)..."
+        Flush-LogBuffer; Pump-UI
+        
+        try {
+            $proc = Start-Process -FilePath $chocoExe -ArgumentList "upgrade chocolatey -y" -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\choco_upg.txt" -RedirectStandardError "$env:TEMP\choco_err.txt"
+            
+            if (-not $proc.WaitForExit(300000)) {
+                Log "[!] Timeout, forzato arresto"
+                $proc.Kill()
+            }
+            
+            $output = Get-Content "$env:TEMP\choco_upg.txt" -ErrorAction SilentlyContinue | Where-Object { $_.Trim() -and $_ -notmatch "^Chocolatey upgraded" }
+            foreach ($line in $output) { Log "   $line"; Pump-UI }
+            
+            $errors = Get-Content "$env:TEMP\choco_err.txt" -ErrorAction SilentlyContinue | Where-Object { $_.Trim() -and $_ -notmatch "Progress" }
+            if ($errors) {
+                Log "[!] Errori:"
+                $errors | Select-Object -First 5 | ForEach-Object { Log "   $_" }
+            }
+            
+            Log ""
+            if ($proc.ExitCode -eq 0) {
+                Log "[OK] Chocolatey aggiornato"
+            } else {
+                Log "[!] Completato con avvisi (codice: $($proc.ExitCode))"
+            }
+            
+            Remove-Item "$env:TEMP\choco_*.txt" -Force -ErrorAction SilentlyContinue
+        } catch {
+            Log "[!] Errore aggiornamento: $($_.Exception.Message)"
+        }
+    }
+    
+    # 5. Pulizia cache vecchi
+    Log "[...] Pulizia cache..."
+    Flush-LogBuffer; Pump-UI
+    
+    try {
+        $cachePath = "$env:LOCALAPPDATA\chocolatey\cache"
+        if (Test-Path $cachePath) {
+            $oldFiles = Get-ChildItem -Path $cachePath -File -ErrorAction SilentlyContinue | 
+                        Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-30) }
+            if ($oldFiles.Count -gt 0) {
+                $oldFiles | Remove-Item -Force -ErrorAction SilentlyContinue
+                Log "[OK] Rimossi $($oldFiles.Count) file cache vecchi"
+            } else {
+                Log "[OK] Cache pulita"
+            }
+        }
+    } catch {
+        Log "[!] Pulizia cache: $($_.Exception.Message)"
+    }
+    
+    # 6. Stato finale
+    Log "[...] Stato..."
+    Flush-LogBuffer; Pump-UI
+    
+    try {
+        $proc = Start-Process -FilePath $chocoExe -ArgumentList "list --local-only" -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\choco_list.txt" -RedirectStandardError "$env:TEMP\choco_err.txt"
+        $proc.WaitForExit(60000)
+        
+        $output = Get-Content "$env:TEMP\choco_list.txt" -ErrorAction SilentlyContinue | Where-Object { $_.Trim() }
+        
+        if ($output.Count -gt 0) {
+            $installed = ($output | Where-Object { $_ -notmatch "^Chocolatey v" }).Count
+            Log "[OK] Pacchetti installati: $installed"
+        } else {
+            Log "[i] Nessun pacchetto installato"
+        }
+        
+        Remove-Item "$env:TEMP\choco_*.txt" -Force -ErrorAction SilentlyContinue
+    } catch {
+        Log "[!] Impossibile elencare pacchetti"
+    }
+    
+    Log ""
+    Log "==============================================================================================="
+    Log "[OK] Chocolatey pronto"
+    Log ""
+    Log "╔═══════════════════════════════════════════════════════════════════════════════╗"
+    Log "║  COMANDI CHOCOLATEY:                                                      ║"
+    Log "╠═══════════════════════════════════════════════════════════════════════════════╣"
+    Log "║                                                                           ║"
+    Log "║  choco install <pacchetto>        Installa un pacchetto                      ║"
+    Log "║  choco upgrade <pacchetto>        Aggiorna un pacchetto                    ║"
+    Log "║  choco uninstall <pacchetto>      Disinstalla un pacchetto                 ║"
+    Log "║  choco search <pacchetto>         Cerca un pacchetto                     ║"
+    Log "║  choco list --local-only         Elenca pacchetti installati           ║"
+    Log "║                                                                       ║"
+    Log "║  Alternativa veloce:                                                         ║"
+    Log "║    choco upgrade all -y            Aggiorna TUTTI i pacchetti              ║"
+    Log "║                                                                       ║"
+    Log "╚═════════════════════════════════════════════════════════════════════════════╝"
+    Log "==============================================================================================="
+    Log ""
+    
+    Update-Progress 100
+    Update-Status "[OK] Chocolatey pronto" $successColor
+    Flush-LogBuffer; Pump-UI
+}
+
+function Do-ChocolateyUpgrade {
+    <#
+    .SYNOPSIS
+    Aggiorna tutti i pacchetti installati con Chocolatey.
+    Mostra prima i pacchetti con aggiornamenti disponibili.
+    Equivalente a: choco upgrade all -y (o con --force se specificato)
+    #>
+    [CmdletBinding()]
+    param(
+        [switch]$Force,
+        [switch]$DryRun
+    )
+    
+    if ($script:isClosing -or (Test-Cancel)) { return }
+    
+    Log ""
+    Log "==============================================================================================="
+    Log "[>] CHOCOLATEY - Aggiornamento Pacchetti$(if ($DryRun) { ' [SIMULAZIONE]' } else { '' })"
+    Log "==============================================================================================="
+    Update-Progress 10
+    Update-Status "[...] Verifica Chocolatey..." $maintColor
+    Flush-LogBuffer; Pump-UI
+    
+    # 1. Verifica che Chocolatey sia installato
+    $chocoExe = $null
+    @(
+        "$env:ProgramData\chocolatey\bin\choco.exe",
+        "$env:ProgramData\chocolatey\choco.exe"
+    ) | ForEach-Object {
+        if (-not $chocoExe -and (Test-Path $_)) { $chocoExe = $_ }
+    }
+    
+    if (-not $chocoExe) {
+        Log "[X] Chocolatey non installato. Usa 'Installa Chocolatey' prima."
+        Update-Status "[X] Chocolatey non trovato" $warningColor
+        Flush-LogBuffer; Update-Progress 100; Pump-UI
+        return
+    }
+    
+    # Ottieni versione di Chocolatey
+    try {
+        $proc = Start-Process -FilePath $chocoExe -ArgumentList "--version" -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\choco_ver.txt"
+        $proc.WaitForExit(30000)
+        $ver = (Get-Content "$env:TEMP\choco_ver.txt" -ErrorAction SilentlyContinue).Trim()
+        Remove-Item "$env:TEMP\choco_ver.txt" -Force -ErrorAction SilentlyContinue
+        Log "[OK] Chocolatey v$ver"
+    } catch {
+        Log "[i] Impossibile ottenere versione"
+    }
+    
+    # 2. Verifica se ci sono pacchetti installati
+    Log "[...] Verifica pacchetti installati..."
+    Flush-LogBuffer; Pump-UI
+    
+    $packages = Get-ChocolateyPackages
+    
+    if (-not $packages -or $packages.Count -eq 0) {
+        Log "[i] Nessun pacchetto installato con Chocolatey."
+        Update-Status "[OK] Nessun pacchetto" $successColor
+        Flush-LogBuffer; Update-Progress 100; Pump-UI
+        return
+    }
+    
+    Log "[OK] Trovati $($packages.Count) pacchetti installati"
+    foreach ($pkg in $packages) {
+        Log "   - $($pkg.Name) ($($pkg.Version))"
+        Pump-UI
+    }
+    Log ""
+    
+    # 3. Verifica pacchetti obsoleti
+    Log "[...] Controllo aggiornamenti disponibili..."
+    Flush-LogBuffer; Pump-UI
+    
+    $outdated = Get-ChocolateyOutdated
+    
+    if ($outdated -and $outdated.Count -gt 0) {
+        Log "[OK] Trovati $($outdated.Count) pacchetti con aggiornamenti:"
+        foreach ($pkg in $outdated) {
+            Log "   - $($pkg.Name): $($pkg.Current) → $($pkg.Latest)"
+            Pump-UI
+        }
+        Log ""
+    } else {
+        if ($Force) {
+            Log "[i] Nessun aggiornamento disponibile, ma il flag -Force eseguirà il re-install."
+        } else {
+            Log "[OK] Nessun pacchetto da aggiornare."
+            Log "   Suggerimento: usa -Force per forzare il re-install anche senza aggiornamenti."
+            Update-Status "[OK] Già aggiornato" $successColor
+            Flush-LogBuffer; Update-Progress 100; Pump-UI
+            return
+        }
+    }
+    
+    # 4. Se è una simulazione, termina qui
+    if ($DryRun) {
+        Log ""
+        if ($outdated -and $outdated.Count -gt 0) {
+            Log "[SIM] Verrebbero aggiornati $($outdated.Count) pacchetti:"
+            foreach ($pkg in $outdated) {
+                Log "   - $($pkg.Name): $($pkg.Current) → $($pkg.Latest)"
+            }
+        } elseif ($Force) {
+            Log "[SIM] Forzato re-install di tutti i $($packages.Count) pacchetti."
+        } else {
+            Log "[SIM] Nessuna operazione da eseguire."
+        }
+        Update-Status "[OK] Simulazione completata" $successColor
+        Flush-LogBuffer; Update-Progress 100; Pump-UI
+        return
+    }
+    
+    # 5. Chiedi conferma solo se ci sono aggiornamenti o se è forzato
+    if ($outdated -and $outdated.Count -gt 0) {
+        $msg = "Trovati $($outdated.Count) pacchetti aggiornabili:`n`n"
+        $outdated | ForEach-Object { $msg += "$($_.Name): $($_.Current) → $($_.Latest)`n" }
+        $msg += "`nProcedere con l'aggiornamento?"
+        $confirm = [System.Windows.Forms.MessageBox]::Show($msg, "Conferma Aggiornamento", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question)
+    } elseif ($Force) {
+        $msg = "Nessun aggiornamento disponibile, ma il flag -Force forzerà il re-install.`n`nProcedere?"
+        $confirm = [System.Windows.Forms.MessageBox]::Show($msg, "Conferma Forzatura", [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Warning)
+    } else {
+        return
+    }
+    
+    if ($confirm -ne "Yes") {
+        Log "[i] Operazione annullata dall'utente"
+        Update-Status "[OK] Annullato" $successColor
+        Flush-LogBuffer; Update-Progress 100; Pump-UI
+        return
+    }
+    
+    # 6. Esegui l'aggiornamento
+    Log ""
+    Log "[...] Aggiornamento pacchetti Chocolatey in corso..."
+    Log "[i] Questo potrebbe richiedere diversi minuti..."
+    Flush-LogBuffer; Pump-UI
+    
+    try {
+        # Costruisci il comando
+        $args = "upgrade all -y"
+        if ($Force) { $args += " --force" }
+        
+        # Aggiungi --limit-output per facilitare il parsing (opzionale)
+        # $args += " --limit-output"
+        
+        $proc = Start-Process -FilePath $chocoExe -ArgumentList $args -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\choco_upgrade.txt" -RedirectStandardError "$env:TEMP\choco_upgrade.err"
+        
+        # Timeout 10 minuti
+        $timeout = 600000
+        $elapsed = 0
+        while (-not $proc.HasExited -and $elapsed -lt $timeout) {
+            Start-Sleep -Milliseconds 500
+            $elapsed += 500
+            if ($elapsed % 5000 -eq 0) {
+                Update-Status "[...] Chocolatey in corso... $([Math]::Round($elapsed/1000))s" $maintColor
+                Flush-LogBuffer; Pump-UI
+            }
+            if (Test-Cancel) { $proc.Kill(); return }
+        }
+        
+        if (-not $proc.HasExited) {
+            Log "[!] Timeout superato ($([Math]::Round($timeout/60000)) minuti), forzato arresto..."
+            $proc.Kill()
+            Start-Sleep -Milliseconds 500
+            Log "[!] Processo terminato forzatamente"
+        }
+        
+        # Leggi output
+        $output = Get-Content "$env:TEMP\choco_upgrade.txt" -ErrorAction SilentlyContinue | Where-Object { $_.Trim() }
+        $errors = Get-Content "$env:TEMP\choco_upgrade.err" -ErrorAction SilentlyContinue | Where-Object { $_.Trim() }
+        
+        # Mostra le righe significative (escludi quelle di progresso)
+        $showLines = $output | Where-Object { 
+            $_ -notmatch "^Progress" -and 
+            $_ -notmatch "^  \(" -and
+            $_ -notmatch "_____" -and
+            $_.Trim() -ne ""
+        }
+        
+        $counter = 0
+        foreach ($line in $showLines) {
+            if ($counter -ge 30) { 
+                Log "   ... (altre righe omesse)"
+                break 
+            }
+            if ($line -match "\[(OK|FAIL|WARN)\]" -or $line -match "upgraded|success|error|warning" -or $line -match "Installing|Downloading") {
+                Log "   $line"
+                $counter++
+            }
+            Pump-UI
+        }
+        
+        if ($errors) {
+            Log "[!] Errori riscontrati:"
+            $errors | Select-Object -First 5 | ForEach-Object { Log "   $_" }
+        }
+        
+        if ($proc.ExitCode -eq 0) {
+            Log ""
+            Log "[OK] Aggiornamento Chocolatey completato con successo"
+        } else {
+            Log ""
+            Log "[!] Aggiornamento completato con codice: $($proc.ExitCode)"
+        }
+        
+        Remove-Item "$env:TEMP\choco_upgrade.txt" -Force -ErrorAction SilentlyContinue
+        Remove-Item "$env:TEMP\choco_upgrade.err" -Force -ErrorAction SilentlyContinue
+        
+        # Mostra riepilogo finale
+        $newOutdated = Get-ChocolateyOutdated
+        if ($newOutdated -and $newOutdated.Count -gt 0) {
+            Log ""
+            Log "[!] Attenzione: alcuni pacchetti non sono stati aggiornati:"
+            foreach ($pkg in $newOutdated) {
+                Log "   - $($pkg.Name): $($pkg.Current) (latest: $($pkg.Latest))"
+            }
+        } else {
+            Log "[OK] Tutti i pacchetti sono aggiornati!"
+        }
+        
+    } catch {
+        Log "[X] Errore durante l'aggiornamento: $($_.Exception.Message)"
+    }
+    
+    Log ""
+    Log "==============================================================================================="
+    Log "[OK] Chocolatey Upgrade completato"
+    Log "==============================================================================================="
+    Log ""
+    
+    Update-Progress 100
+    Update-Status "[OK] Chocolatey Upgrade" $successColor
+    Flush-LogBuffer; Pump-UI
+}
+
+
+
+function Get-ChocolateyPackages {
+    <#
+    .SYNOPSIS
+    Ottiene l'elenco dei pacchetti installati con Chocolatey, filtrando eventuali righe corrotte (nome vuoto).
+    #>
+    $chocoExe = $null
+    @("$env:ProgramData\chocolatey\bin\choco.exe", "$env:ProgramData\chocolatey\choco.exe") | ForEach-Object {
+        if (-not $chocoExe -and (Test-Path $_)) { $chocoExe = $_ }
+    }
+    
+    if (-not $chocoExe) { return $null }
+    
+    try {
+        $tempFile = "$env:TEMP\choco_list_$([guid]::NewGuid().ToString('N')).txt"
+        $proc = Start-Process -FilePath $chocoExe -ArgumentList "list --local-only --limit-output" -NoNewWindow -PassThru -RedirectStandardOutput $tempFile -RedirectStandardError "$tempFile.err"
+        $proc.WaitForExit(30000)
+        
+        # Filtro per escludere righe con Name vuoto (il famoso "()" o "| |")
+        $packages = Get-Content $tempFile -ErrorAction SilentlyContinue | Where-Object { $_ -match "\|" } | ForEach-Object {
+            $parts = $_ -split "\|"
+            if ($parts.Count -ge 2 -and $parts[0].Trim() -ne "") {
+                [PSCustomObject]@{ 
+                    Name = $parts[0].Trim(); 
+                    Version = $parts[1].Trim() 
+                }
+            }
+        }
+        
+        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+        Remove-Item "$tempFile.err" -Force -ErrorAction SilentlyContinue
+        return $packages
+    } catch {
+        return $null
+    }
+}
+
+
+
+function Get-ChocolateyOutdated {
+    <#
+    .SYNOPSIS
+    Mostra i pacchetti Chocolatey che possono essere aggiornati, escludendo le voci corrotte.
+    #>
+    [CmdletBinding()]
+    param()
+    
+    $chocoExe = $null
+    @("$env:ProgramData\chocolatey\bin\choco.exe", "$env:ProgramData\chocolatey\choco.exe") | ForEach-Object {
+        if (-not $chocoExe -and (Test-Path $_)) { $chocoExe = $_ }
+    }
+    
+    if (-not $chocoExe) {
+        Log "[X] Chocolatey non installato."
+        return $null
+    }
+    
+    try {
+        $tempFile = "$env:TEMP\choco_outdated_$([guid]::NewGuid().ToString('N')).txt"
+        $proc = Start-Process -FilePath $chocoExe -ArgumentList "outdated --limit-output" -NoNewWindow -PassThru -RedirectStandardOutput $tempFile -RedirectStandardError "$tempFile.err"
+        $proc.WaitForExit(60000)  # Più tempo perché contatta i repository
+        
+        # Filtro per escludere righe con Name vuoto (il bug del ciclo infinito)
+        $outdated = Get-Content $tempFile -ErrorAction SilentlyContinue | Where-Object { $_ -match "\|" } | ForEach-Object {
+            $parts = $_ -split "\|"
+            if ($parts.Count -ge 4 -and $parts[0].Trim() -ne "") {
+                [PSCustomObject]@{
+                    Name    = $parts[0].Trim()
+                    Current = $parts[1].Trim()
+                    Latest  = $parts[2].Trim()
+                    Pin     = $parts[3].Trim()
+                }
+            }
+        }
+        
+        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+        Remove-Item "$tempFile.err" -Force -ErrorAction SilentlyContinue
+        
+        return $outdated
+    } catch {
+        Log "[!] Errore: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+
+
 function Update-EdgeBrowser {
     if (Test-Cancel) { return }
     if (-not (Test-WingetAvailable)) { return }
@@ -701,8 +1485,11 @@ Export-ModuleMember -Function @(
     'Do-SearchWU',
     'Do-InstallWU',
     'Do-DriverUpdate',
-    'Do-DriverSDI',      # ← NUOVO
-    'Remove-SDITemp',    # ← NUOVO
+    'Do-DriverSDI',
+    'Do-InstallChocolatey',
+    'Do-ChocolateyUpgrade',
+    'Remove-SDITemp',
+    'Do-RepairWinget',
     'Do-FullUpdate',
     'Do-RunAll',
     'Test-WingetAvailable'
