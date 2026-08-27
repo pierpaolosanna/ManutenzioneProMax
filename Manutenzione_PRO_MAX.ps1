@@ -155,6 +155,10 @@ function Build-GUI {
                 @{Text="🔑 Eleva Admin"; Action={Restart-AsAdmin}; Tooltip="Riavvia con privilegi amministrativi."},
                 @{Text="💾 Crea Ripristino"; Action={Do-RestorePoint}; Tooltip="Crea punto di ripristino."},
                 @{Text="🔄 Winget"; Action={Do-Winget}; Tooltip="Aggiorna programmi con Winget."},
+				@{Text="🔧 Ripristina Winget"; Action={Do-RepairWinget}; Tooltip="Ripristina le origini di winget e risolve errori di cache/404."},
+				@{Text="📦 Installa Chocolatey"; Action={Do-InstallChocolatey}; Tooltip="Installa/Configura Chocolatey come alternativa a Winget."},
+				@{Text="🍫 Chocolatey Upgrade"; Action={Do-ChocolateyUpgrade}; Tooltip="Aggiorna tutti i pacchetti Chocolatey (choco upgrade all -y)"},
+				@{Text="🍫 Chocolatey(Forzato)"; Action={Do-ChocolateyUpgrade -Force}; Tooltip="Forza il re-install di TUTTI i pacchetti Chocolatey (choco upgrade all -y --force)"},
                 @{Text="🌐 Edge"; Action={Update-EdgeBrowser}; Tooltip="Aggiorna specificamente Microsoft Edge."},
                 @{Text="📦 Store"; Action={Do-StoreUpdate}; Tooltip="Aggiorna app Microsoft Store."},
                 @{Text="🔍 Cerca WU"; Action={Do-SearchWU}; Tooltip="Cerca aggiornamenti Windows."},
@@ -225,6 +229,7 @@ function Build-GUI {
                 # === SEPARATORE VISUALE (opzionale - usa una linea vuota) ===
                 
                 # === PULIZIE AVANZATE (richiedono Admin) ===
+				@{Text="🔄 DISM Cleanup"; Action={Start-Process dism -ArgumentList '/Online /Cleanup-Image /StartComponentCleanup' -Wait}; Tooltip="Rimuove componenti obsoleti da WinSxS (richiede admin)"}
                 @{Text="📦 Windows Update"; Action={Do-CleanWindowsUpdate}; Tooltip="Pulisce cache download aggiornamenti Windows."}
                 @{Text="🔙 Windows.old"; Action={Do-CleanWindowsOld}; Tooltip="Rimuove vecchie versioni Windows (con conferma)."}
                 @{Text="💾 Disk Cleanup"; Action={Do-DiskCleanup}; Tooltip="Esegue pulizia disco Windows configurata."}
