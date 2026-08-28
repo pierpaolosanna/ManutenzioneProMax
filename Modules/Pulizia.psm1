@@ -49,43 +49,36 @@ function Grant-FullAccessFast {
         [switch]$Recurse
     )
     if (-not (Test-Path $Path)) { return $false }
-    if (-not $global:isAdmin) { 
+    if (-not $global:isAdmin) {
         Log "   [!] Permessi non concessi: non sei amministratore"
         return $false 
     }
     $path = $Path.TrimEnd('\')
     $success = $false
-    
-    # 1. takeown (senza /D per evitare errore di sintassi)
+
+    # 1. takeown (output completamente soppresso)
     try {
-        $cmd = "takeown /F `"$path`" /A"
-        if ($Recurse) { $cmd += " /R" }
-        # Reindirizza errori a null per evitare che l'output interrompa il flusso
-        $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $cmd 2>nul" -Wait -PassThru -NoNewWindow -ErrorAction SilentlyContinue
-        # takeown spesso restituisce exit code 0 anche se non riesce, quindi ignoriamo l'errore
+        $takeownArgs = "takeown /F `"$path`" /A"
+        if ($Recurse) { $takeownArgs += " /R" }
+        # Redirect stdout e stderr a nul
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c $takeownArgs >nul 2>&1" -Wait -NoNewWindow -ErrorAction SilentlyContinue
         $success = $true
-    } catch {
-        # Ignora errore di takeown
-    }
-    
-    # 2. icacls con /grant:r per sovrascrivere e /inheritance:r per evitare il prompt
+    } catch { }
+
+    # 2. icacls (output soppresso e risposta automatica "S" a eventuali prompt)
     try {
-        # /grant:r sostituisce le voci esistenti, /inheritance:r rimuove l'ereditarietà
-        $cmd = "icacls `"$path`" /grant:r Administrators:F /T /C /Q /inheritance:r"
-        $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $cmd" -Wait -PassThru -NoNewWindow -ErrorAction Stop
-        if ($proc.ExitCode -eq 0) { $success = $true }
+        $icaclsArgs = "echo Y| icacls `"$path`" /grant:r Administrators:F /T /C /Q /inheritance:r >nul 2>&1"
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c $icaclsArgs" -Wait -NoNewWindow -ErrorAction SilentlyContinue
+        $success = $true
     } catch {
         Log "   [!] icacls fallito: $($_.Exception.Message)"
     }
-    
-    # 3. Rimuovi attributo readonly
-    try {
-        attrib -R "$path\*.*" /S /D 2>$null
-    } catch { }
-    
+
+    # 3. Rimuovi attributo readonly (silenzioso)
+    Start-Process -FilePath "cmd.exe" -ArgumentList "/c attrib -R `"$path`" /S /D >nul 2>&1" -Wait -NoNewWindow -ErrorAction SilentlyContinue
+
     return $success
 }
-
 
 
 function Remove-FolderFast {
