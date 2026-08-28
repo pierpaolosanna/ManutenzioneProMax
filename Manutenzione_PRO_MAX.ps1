@@ -286,6 +286,7 @@ function Build-GUI {
         "Diagnostica" = @{
             Color = [System.Drawing.Color]::FromArgb(80, 255, 200)
             Items = @(
+                @{Text="🏆 Health Score"; Action={Do-HealthScore}; Tooltip="Punteggio complessivo di salute del sistema (0-100) con report HTML."}
                 @{Text="💻 Info Sistema"; Action={Do-SystemInfo}; Tooltip="Informazioni hardware e OS."}
                 @{Text="🔋 Batteria"; Action={Do-BatteryReport}; Tooltip="Report sulla salute della batteria."}
                 @{Text="⏰ Uptime"; Action={Do-Uptime}; Tooltip="Tempo di attività del sistema."}
@@ -293,6 +294,14 @@ function Build-GUI {
                 @{Text="🚀 Startup"; Action={Do-StartupPrograms}; Tooltip="Programmi avviati all'avvio."}
                 @{Text="💿 Spazio Disco"; Action={Do-DiskSpace}; Tooltip="Spazio occupato dalle cartelle principali."}
                 @{Text="⚙️ Servizi"; Action={Do-ServiceStatus}; Tooltip="Stato dei servizi di sistema principali."}
+                @{Text="🩺 Salute Dischi"; Action={Do-DiskHealth}; Tooltip="Stato SMART dei dischi fisici."}
+                @{Text="📋 Log Eventi"; Action={Do-EventLogCheck}; Tooltip="Errori critici nelle ultime 48 ore."}
+                @{Text="🛡️ Windows Defender"; Action={Do-DefenderStatus}; Tooltip="Protezione real-time e stato definizioni antivirus."}
+                @{Text="🔒 BitLocker"; Action={Do-BitLockerStatus}; Tooltip="Stato crittografia dei volumi (se disponibile)."}
+                @{Text="🧠 Memoria Virtuale"; Action={Do-PagefileStatus}; Tooltip="Configurazione e utilizzo del file di paging."}
+                @{Text="⏮️ Punti Ripristino"; Action={Do-RestorePoints}; Tooltip="Elenco punti di ripristino disponibili."}
+                @{Text="🔧 Integrità Sistema"; Action={Do-SystemFileCheck}; Tooltip="Controllo rapido componenti Windows (DISM CheckHealth)."}
+                @{Text="🔄 Windows Update"; Action={Do-WindowsUpdateStatus}; Tooltip="Aggiornamenti in sospeso (ricerca online, può richiedere qualche minuto)."}
             )
         }
 		"Sistema" = @{
