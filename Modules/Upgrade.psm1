@@ -531,7 +531,7 @@ function Do-ChocolateyUpgrade {
     # Ottieni versione di Chocolatey
     try {
         $proc = Start-Process -FilePath $chocoExe -ArgumentList "--version" -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\choco_ver.txt"
-        $proc.WaitForExit(30000)
+        [void]$proc.WaitForExit(30000)
         $ver = (Get-Content "$env:TEMP\choco_ver.txt" -ErrorAction SilentlyContinue).Trim()
         Remove-Item "$env:TEMP\choco_ver.txt" -Force -ErrorAction SilentlyContinue
         Log "[OK] Chocolatey v$ver"
@@ -726,51 +726,59 @@ function Do-ChocolateyUpgrade {
     Flush-LogBuffer; Pump-UI
 }
 
-
-
 function Get-ChocolateyPackages {
-    <#
-    .SYNOPSIS
-    Ottiene l'elenco dei pacchetti installati con Chocolatey, filtrando eventuali righe corrotte (nome vuoto).
-    #>
     $chocoExe = $null
     @("$env:ProgramData\chocolatey\bin\choco.exe", "$env:ProgramData\chocolatey\choco.exe") | ForEach-Object {
         if (-not $chocoExe -and (Test-Path $_)) { $chocoExe = $_ }
     }
-    
-    if (-not $chocoExe) { return $null }
-    
-    try {
-        $tempFile = "$env:TEMP\choco_list_$([guid]::NewGuid().ToString('N')).txt"
-        $proc = Start-Process -FilePath $chocoExe -ArgumentList "list --local-only --limit-output" -NoNewWindow -PassThru -RedirectStandardOutput $tempFile -RedirectStandardError "$tempFile.err"
-        $proc.WaitForExit(30000)
-        
-        # Filtro per escludere righe con Name vuoto (il famoso "()" o "| |")
-        $packages = Get-Content $tempFile -ErrorAction SilentlyContinue | Where-Object { $_ -match "\|" } | ForEach-Object {
-            $parts = $_ -split "\|"
-            if ($parts.Count -ge 2 -and $parts[0].Trim() -ne "") {
-                [PSCustomObject]@{ 
-                    Name = $parts[0].Trim(); 
-                    Version = $parts[1].Trim() 
+    if (-not $chocoExe) { return @() }
+
+    # IMPORTANTE: tutta la logica "a rischio" (Start-Process, WaitForExit, chiamate a Log, ecc.)
+    # viene eseguita in uno script block isolato. Qualsiasi output non catturato da quelle
+    # istruzioni (es. un booleano da WaitForExit, o un valore di ritorno non soppresso da Log)
+    # finisce in $rawOutput invece di sporcare direttamente il return della funzione.
+    # Alla fine filtriamo SOLO gli oggetti pacchetto validi, scartando qualunque altra cosa.
+    $rawOutput = & {
+        try {
+            $tempFile = "$env:TEMP\choco_list_$([guid]::NewGuid().ToString('N')).txt"
+            $proc = Start-Process -FilePath $chocoExe -ArgumentList "list --local-only --limit-output --no-color --no-progress" -NoNewWindow -PassThru -RedirectStandardOutput $tempFile -RedirectStandardError "$tempFile.err"
+            $null = $proc.WaitForExit(30000)
+
+            $packages = @()
+            $rawLines = @(Get-Content $tempFile -ErrorAction SilentlyContinue)
+            Log "[DEBUG] choco list output raw: $($rawLines.Count) linee"
+            foreach ($line in $rawLines) {
+                if ([string]::IsNullOrWhiteSpace($line)) { continue }
+                $parts = $line -split "\|" | ForEach-Object { $_.Trim() }
+                $firstField = $parts[0]
+                # NON escludere "chocolatey"! È un pacchetto valido.
+                if ([string]::IsNullOrWhiteSpace($firstField) -or $firstField -eq "-") {
+                    Log "[DEBUG] Riga scartata (vuota o '-'): '$line'"
+                    continue
+                }
+                if ($parts.Count -ge 2 -and -not [string]::IsNullOrWhiteSpace($parts[1])) {
+                    $packages += [PSCustomObject]@{
+                        Name    = $firstField
+                        Version = $parts[1]
+                    }
+                    Log "[DEBUG] Pacchetto accettato: $firstField|$($parts[1])"
+                } else {
+                    Log "[DEBUG] Riga scartata (versione mancante): '$line'"
                 }
             }
+
+            Remove-Item $tempFile, "$tempFile.err" -Force -ErrorAction SilentlyContinue
+            $packages
+        } catch {
+            Log "[!] Errore Get-ChocolateyPackages: $($_.Exception.Message)"
         }
-        
-        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
-        Remove-Item "$tempFile.err" -Force -ErrorAction SilentlyContinue
-        return $packages
-    } catch {
-        return $null
     }
+
+    return ,@($rawOutput | Where-Object { $_ -is [PSCustomObject] -and $_.PSObject.Properties.Name -contains 'Name' -and $_.PSObject.Properties.Name -contains 'Version' })
 }
 
 
-
 function Get-ChocolateyOutdated {
-    <#
-    .SYNOPSIS
-    Mostra i pacchetti Chocolatey che possono essere aggiornati, escludendo le voci corrotte.
-    #>
     [CmdletBinding()]
     param()
     
@@ -778,38 +786,88 @@ function Get-ChocolateyOutdated {
     @("$env:ProgramData\chocolatey\bin\choco.exe", "$env:ProgramData\chocolatey\choco.exe") | ForEach-Object {
         if (-not $chocoExe -and (Test-Path $_)) { $chocoExe = $_ }
     }
-    
-    if (-not $chocoExe) {
-        Log "[X] Chocolatey non installato."
-        return $null
-    }
-    
-    try {
-        $tempFile = "$env:TEMP\choco_outdated_$([guid]::NewGuid().ToString('N')).txt"
-        $proc = Start-Process -FilePath $chocoExe -ArgumentList "outdated --limit-output" -NoNewWindow -PassThru -RedirectStandardOutput $tempFile -RedirectStandardError "$tempFile.err"
-        $proc.WaitForExit(60000)  # Più tempo perché contatta i repository
-        
-        # Filtro per escludere righe con Name vuoto (il bug del ciclo infinito)
-        $outdated = Get-Content $tempFile -ErrorAction SilentlyContinue | Where-Object { $_ -match "\|" } | ForEach-Object {
-            $parts = $_ -split "\|"
-            if ($parts.Count -ge 4 -and $parts[0].Trim() -ne "") {
-                [PSCustomObject]@{
-                    Name    = $parts[0].Trim()
-                    Current = $parts[1].Trim()
-                    Latest  = $parts[2].Trim()
-                    Pin     = $parts[3].Trim()
+    if (-not $chocoExe) { return @() }
+
+    # --- PULIZIA VOCI CORROTTE (ma senza toccare chocolatey) ---
+    # Isolata in uno script block: qualunque output non soppresso al suo interno
+    # (WaitForExit, chiamate a Log, ecc.) resta confinato qui e non raggiunge il return finale.
+    & {
+        try {
+            $localTemp = "$env:TEMP\choco_local_$([guid]::NewGuid().ToString('N')).txt"
+            $proc = Start-Process -FilePath $chocoExe -ArgumentList "list --local-only --limit-output --no-color --no-progress" -NoNewWindow -PassThru -RedirectStandardOutput $localTemp -RedirectStandardError "$localTemp.err"
+            $null = $proc.WaitForExit(30000)
+
+            $corruptedNames = @()
+            foreach ($line in (Get-Content $localTemp -ErrorAction SilentlyContinue)) {
+                if ([string]::IsNullOrWhiteSpace($line)) { continue }
+                $parts = $line -split "\|" | ForEach-Object { $_.Trim() }
+                # Solo righe con nome vuoto o "-" sono corrotte. NON rimuovere chocolatey.
+                if ([string]::IsNullOrWhiteSpace($parts[0]) -or $parts[0] -eq "-") {
+                    if ($parts.Count -ge 2 -and -not [string]::IsNullOrWhiteSpace($parts[1])) {
+                        $corruptedNames += $parts[1]
+                    }
                 }
             }
+            if ($corruptedNames.Count -gt 0) {
+                Log "[i] Rilevate voci corrotte: $($corruptedNames -join ', ')"
+                foreach ($id in $corruptedNames) {
+                    try {
+                        Log "[...] Rimozione voce corrotta: $id"
+                        $uninstallProc = Start-Process -FilePath $chocoExe -ArgumentList "uninstall $id -y --skip-autouninstaller --no-color" -NoNewWindow -PassThru
+                        $null = $uninstallProc.WaitForExit(60000)
+                    } catch { Log "[!] Impossibile rimuovere $id" }
+                }
+                Start-Process -FilePath $chocoExe -ArgumentList "cache remove --all" -NoNewWindow -Wait -ErrorAction SilentlyContinue | Out-Null
+            }
+            Remove-Item $localTemp, "$localTemp.err" -Force -ErrorAction SilentlyContinue
+        } catch {
+            Log "[!] Errore pulizia voci corrotte: $($_.Exception.Message)"
         }
-        
-        Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
-        Remove-Item "$tempFile.err" -Force -ErrorAction SilentlyContinue
-        
-        return $outdated
-    } catch {
-        Log "[!] Errore: $($_.Exception.Message)"
-        return $null
+    } | Out-Null
+    # --- FINE PULIZIA ---
+
+    # --- RICERCA AGGIORNAMENTI ---
+    # Anche qui: tutto l'output "a rischio" viene catturato in $rawOutput e filtrato alla fine,
+    # così qualunque leak (booleani, valori di Log non soppressi, ecc.) viene scartato.
+    $rawOutput = & {
+        try {
+            $tempFile = "$env:TEMP\choco_outdated_$([guid]::NewGuid().ToString('N')).txt"
+            $proc = Start-Process -FilePath $chocoExe -ArgumentList "outdated --limit-output --no-color --no-progress" -NoNewWindow -PassThru -RedirectStandardOutput $tempFile -RedirectStandardError "$tempFile.err"
+            $null = $proc.WaitForExit(60000)
+
+            $outdated = @()
+            $rawLines = @(Get-Content $tempFile -ErrorAction SilentlyContinue)
+            Log "[DEBUG] choco outdated output raw: $($rawLines.Count) linee"
+            foreach ($line in $rawLines) {
+                if ([string]::IsNullOrWhiteSpace($line)) { continue }
+                $parts = $line -split "\|" | ForEach-Object { $_.Trim() }
+                $firstField = $parts[0]
+                # NON escludere "chocolatey"!
+                if ([string]::IsNullOrWhiteSpace($firstField) -or $firstField -eq "-") {
+                    Log "[DEBUG] Riga outdated scartata (vuota o '-'): '$line'"
+                    continue
+                }
+                if ($parts.Count -ge 3 -and -not [string]::IsNullOrWhiteSpace($parts[1]) -and -not [string]::IsNullOrWhiteSpace($parts[2])) {
+                    $outdated += [PSCustomObject]@{
+                        Name    = $firstField
+                        Current = $parts[1]
+                        Latest  = $parts[2]
+                        Pin     = if ($parts.Count -ge 4) { $parts[3] } else { $false }
+                    }
+                    Log "[DEBUG] Pacchetto outdated accettato: $firstField|$($parts[1])|$($parts[2])"
+                } else {
+                    Log "[DEBUG] Riga outdated scartata (dati incompleti): '$line'"
+                }
+            }
+
+            Remove-Item $tempFile, "$tempFile.err" -Force -ErrorAction SilentlyContinue
+            $outdated
+        } catch {
+            Log "[!] Errore Get-ChocolateyOutdated: $($_.Exception.Message)"
+        }
     }
+
+    return ,@($rawOutput | Where-Object { $_ -is [PSCustomObject] -and $_.PSObject.Properties.Name -contains 'Name' -and $_.PSObject.Properties.Name -contains 'Current' -and $_.PSObject.Properties.Name -contains 'Latest' })
 }
 
 
