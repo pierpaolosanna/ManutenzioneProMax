@@ -357,6 +357,7 @@ function Build-GUI {
             Items = @(
                 @{Text="💾 Backup Files"; Action={Do-BackupFiles}; Tooltip="Backup .zip (esclude cartelle backup*)."}
                 @{Text="📦 Backup Avanzato (7z)"; Action={Do-BackupAdvanced}; Tooltip="Backup 7-Zip massimo (esclude backup*)."}
+                @{Text="🔌 Backup Driver (DISM)"; Action={Do-BackupSystem}; Tooltip="Esporta tutti i driver installati tramite DISM (richiede admin)."}
                 @{Text="💾 Crea Ripristino"; Action={Do-RestorePoint}; Tooltip="Crea un punto di ripristino."}
             )
         }
