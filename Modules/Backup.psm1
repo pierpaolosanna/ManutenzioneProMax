@@ -1,6 +1,6 @@
 # ============================================================
-# BACKUP.psm1 - Backup files e avanzato
-# Versione: 1.0.0
+# BACKUP.psm1 - Backup files, avanzato e driver di sistema
+# Versione: 1.1.0
 # ============================================================
 
 function Do-BackupFiles {
@@ -188,7 +188,76 @@ function Do-BackupAdvanced {
     Flush-LogBuffer; Pump-UI
 }
 
+function Do-BackupSystem {
+    <#
+    .SYNOPSIS
+    Esegue il backup di tutti i driver installati tramite DISM.
+    .DESCRIPTION
+    Esporta i driver in una cartella scelta dall'utente, con una struttura simile a quella dei backup normali.
+    #>
+    if ($script:isClosing -or (Test-Cancel)) { return }
+    if (-not $global:isAdmin) {
+        Log "[X] Richiesti privilegi amministrativi per esportare i driver."
+        Update-Status "[!] Admin richiesto" $global:warningColor
+        Flush-LogBuffer; Update-Progress 100; Pump-UI; return
+    }
+
+    $folderDialog = New-Object System.Windows.Forms.FolderBrowserDialog
+    $folderDialog.Description = "Seleziona la cartella dove SALVARE il backup dei driver"
+    $folderDialog.ShowNewFolderButton = $true
+    $folderDialog.RootFolder = "MyComputer"
+    if ($folderDialog.ShowDialog() -ne "OK") { Log "[i] Backup driver annullato."; Update-Progress 100; return }
+    $destPath = $folderDialog.SelectedPath
+    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $driverFolder = Join-Path $destPath "Backup_Drivers_${timestamp}"
+    New-Item -ItemType Directory -Force -Path $driverFolder | Out-Null
+
+    Log ""; Log "==============================================================================================="; Log "[>] BACKUP DRIVER DI SISTEMA (DISM)"; Log "==============================================================================================="
+    Log "[i] Destinazione: $driverFolder"
+    Log ""
+
+    # Verifica spazio disponibile (messaggio informativo)
+    $drive = Split-Path $destPath -Qualifier
+    $freeSpace = (Get-PSDrive -Name $drive.Substring(0,1)).Free
+    Log "[i] Spazio disponibile su $drive : $([Math]::Round($freeSpace/1GB, 2)) GB"
+    Log "[i] I driver possono occupare diversi GB. Assicurati di avere spazio sufficiente."
+    Log ""
+
+    $response = [System.Windows.Forms.MessageBox]::Show("Avviare il backup di TUTTI i driver installati?`n`nLa cartella selezionata è:`n$driverFolder", "Conferma Backup Driver", "YesNo", "Question")
+    if ($response -ne "Yes") { Log "[i] Backup driver annullato."; Update-Progress 100; return }
+
+    Update-Status "[...] Esportazione driver in corso..." $global:warningColor
+    Flush-LogBuffer; Pump-UI
+
+    try {
+        $dismArgs = "/online /export-driver /destination:`"$driverFolder`""
+        Log "[CMD] dism $dismArgs"
+        $exitCode = Run-ProcessRealtime "dism.exe" $dismArgs "Esportazione driver" 10 90
+        
+        if (Test-Path $driverFolder) {
+            $driverCount = (Get-ChildItem -Path $driverFolder -Recurse -File -ErrorAction SilentlyContinue).Count
+            Log ""; Log "[OK] BACKUP DRIVER COMPLETATO!"
+            Log "     Cartella: $driverFolder"
+            Log "     File esportati: $driverCount"
+            Log "     Nota: I driver sono in formato .inf, .sys e altri file di supporto."
+            Update-Status "[OK] Backup driver completato ($driverCount file)" $global:successColor
+            $openFolder = [System.Windows.Forms.MessageBox]::Show("Backup driver completato!`nAprire la cartella?", "Backup Completato", "YesNo", "Information")
+            if ($openFolder -eq "Yes") { Start-Process $driverFolder }
+        } else {
+            Log "[X] Cartella driver non trovata dopo l'esportazione!"
+            Update-Status "[X] Errore backup driver" $global:exitColor
+        }
+    } catch {
+        Log "[X] Errore esportazione driver: $($_.Exception.Message)"
+        Update-Status "[X] Errore backup driver" $global:exitColor
+    }
+    Log "==============================================================================================="; Log ""
+    Update-Progress 100
+    Flush-LogBuffer; Pump-UI
+}
+
 Export-ModuleMember -Function @(
     'Do-BackupFiles',
-    'Do-BackupAdvanced'
+    'Do-BackupAdvanced',
+    'Do-BackupSystem'
 )
